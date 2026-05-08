@@ -8,7 +8,7 @@
 
 ## Executive summary
 
-The project is a **large monorepo** combining a **NestJS + Prisma + PostgreSQL** backend (Discord bot, REST API, optional Bull queues, Socket.IO) with a **Next.js 16** dashboard. The **data model and module surface area suggest an enterprise moderation platform**; **implementation quality is uneven** but a **remediation pass** addressed the highest-risk auth/RBAC/realtime issues, **removed `vm2`**, **aligned `AppModule` HTTP surface** closer to `ApiModule`, **replaced the global `JSON.stringify` BigInt patch** with an interceptor, and **rewired primary dashboard widgets** to guild-scoped APIs instead of `mock-data`. Automated tests remain **limited** relative to scope (unit tests for OAuth exchange codes and `PermissionGuard`; **HTTP supertest** for auth/guild probes, **`GET /api/health`**, **`GET /api/stats`**, **`GET /api/analytics/rules`**, **`GET /api/analytics/automations`**, **`GET /api/analytics/automations/performance`** with cookie/Bearer, `x-guild-id`, and **`ANALYTICS_VIEW`** vs 403 — all with mocked Prisma/RBAC, no real database). Overall maturity: **internal alpha**, closer to a maintainable internal pilot than before, still not production-hardened without full DB-backed E2E and further automation hardening.
+The project is a **large monorepo** combining a **NestJS + Prisma + PostgreSQL** backend (Discord bot, REST API, optional Bull queues, Socket.IO) with a **Next.js 16** dashboard. The **data model and module surface area suggest an enterprise moderation platform**; **implementation quality is uneven** but a **remediation pass** addressed the highest-risk auth/RBAC/realtime issues, **removed `vm2`**, **aligned `AppModule` HTTP surface** closer to `ApiModule`, **replaced the global `JSON.stringify` BigInt patch** with an interceptor, and **rewired primary dashboard widgets** to guild-scoped APIs instead of `mock-data`. Automated tests remain **limited** relative to scope (unit tests for OAuth exchange codes and `PermissionGuard`; **HTTP supertest** for auth/guild probes, **`GET /api/health`**, **`GET /api/stats`**, **`GET /api/analytics/*`**, **`GET/POST /api/incidents`**, **`GET /api/actions`**, with cookie/Bearer, `x-guild-id`, and permission matrices — all with mocked `PrismaService` / `RbacService`, no real database). Overall maturity: **internal alpha**, closer to a maintainable internal pilot than before, still not production-hardened without full DB-backed E2E and further automation hardening.
 
 ---
 
@@ -197,11 +197,11 @@ The project is a **large monorepo** combining a **NestJS + Prisma + PostgreSQL**
 
 ### Findings
 
-- Jest configured; coverage remains thin relative to scope. **Unit tests** under `apps/server/src/**` cover **OAuth exchange codes** (`SessionService`) and **`PermissionGuard`**. **HTTP integration tests** under `apps/server/test/**` (supertest) exercise **`POST /api/auth/oauth-exchange`**, **`GET /api/auth/me`** (cookie + Bearer), **`GET /api/health`**, **`GET /api/stats`** (guild header, `ANALYTICS_VIEW` vs 403), **`GET /api/analytics/rules`**, **`GET /api/analytics/automations`**, **`GET /api/analytics/automations/performance`** (mocked `incident.groupBy`, `automation` / `jobRun` / `automationRun`), **`GET /api/analytics/rules`** 403 without `ANALYTICS_VIEW`, and **`x-guild-id`** with `SessionGuard` + `GuildGuard` using mocked `PrismaService` / `RbacService` (no real database).
+- Jest configured; coverage remains thin relative to scope. **Unit tests** under `apps/server/src/**` cover **OAuth exchange codes** (`SessionService`) and **`PermissionGuard`**. **HTTP integration tests** under `apps/server/test/**` (supertest) exercise **`POST /api/auth/oauth-exchange`**, **`GET /api/auth/me`** (cookie + Bearer), **`GET /api/health`**, **`GET /api/stats`** (guild header, `ANALYTICS_VIEW` vs 403), **`GET /api/analytics/rules`**, **`GET /api/analytics/automations`**, **`GET /api/analytics/automations/performance`** (mocked `incident.groupBy`, `automation` / `jobRun` / `automationRun`), **`GET /api/analytics/rules`** 403 without `ANALYTICS_VIEW`, **`GET/POST /api/incidents`** and **`GET /api/actions`** with `INCIDENTS_VIEW` / `ACTIONS_VIEW` and permission-denied cases, and **`x-guild-id`** with `SessionGuard` + `GuildGuard` using mocked `PrismaService` / `RbacService` (no real database). Incidents/actions e2e use **`IncidentsModule`** plus a slim **`ActionsHttpSliceModule`** (real `ActionsController` + `ActionsService`, stub `DiscordService`) so the full **`ApiModule`** graph (Discord login, Bull) is not bootstrapped in Jest.
 
 ### Verdict
 
-**Critical gap** remains for DB-backed E2E and supertest coverage of the rest of the HTTP surface (incidents, actions, domain controllers); continue expanding tests for auth, RBAC, and guild-scoped APIs.
+**Critical gap** remains for DB-backed E2E and supertest coverage of the rest of the HTTP surface (incident approve/reject, action execute, remaining domain controllers); continue expanding tests for auth, RBAC, and guild-scoped APIs.
 
 ---
 
@@ -251,10 +251,10 @@ The project is a **large monorepo** combining a **NestJS + Prisma + PostgreSQL**
 
 ## 13. Recommendations (priority)
 
-1. **Security:** ~~Remove `vm2`~~ (done); expand E2E / supertest (partial: auth, guild, health, stats, **`/api/analytics/*`**); add **DB-backed** E2E for OAuth and guild ACLs when CI has Postgres.
+1. **Security:** ~~Remove `vm2`~~ (done); expand E2E / supertest (partial: auth, guild, health, stats, **`/api/analytics/*`**, **`/api/incidents`**, **`GET /api/actions`**); add **DB-backed** E2E for OAuth and guild ACLs when CI has Postgres.
 2. **Web:** ~~Delete `app/(dashboard)`~~ (done); ~~remove mock-driven dashboard widgets~~ (done); ~~delete `lib/mock-data.ts`~~ (done).
 3. **Ops:** Standardize on `PROCESS_TYPE=api` + `bot` + Redis + Postgres; document ports and cookie domains for same-site auth.
-4. **Quality:** ~~Add Jest/supertest~~ (partial: auth + guild + health + stats + **`/api/analytics/*`**); continue with incidents, actions, and remaining domain controllers.
+4. **Quality:** ~~Add Jest/supertest~~ (partial: auth + guild + health + stats + **`/api/analytics/*`** + **`/api/incidents`** + **`GET /api/actions`**); continue with incident resolve/approve flows, **`POST /api/actions`**, and remaining domain controllers.
 
 ---
 
@@ -310,6 +310,7 @@ The following changes were applied in the same session as this report:
 | Supertest: `GET /api/health`, `GET /api/stats`, `/api/analytics/*` + `ANALYTICS_VIEW` / 403; Prisma mock extended for `automation`, `jobRun`, `automationRun` | `test/api-stats.http.e2e-spec.ts` |
 | `getAutomationPerformance` uses lowercase `AutomationRun.status` values matching `workflow-engine.service.ts` | `api.controller.ts` |
 | Env: extra Redis warning when `PROCESS_TYPE` is `api` or `all` and Redis unset | `env.validation.ts` |
+| Supertest: `/api/incidents` (list, by id, create), `/api/actions` list; `ActionsHttpSliceModule` stubs Discord (no full `ApiModule` in Jest) | `test/incidents-actions.http.e2e-spec.ts` |
 | Removed unused `apps/web/lib/mock-data.ts` | (deleted) |
 
 ---
