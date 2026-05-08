@@ -92,6 +92,10 @@ export const authAPI = {
   // Exchange session token for cookie-based session
   exchangeToken: (token: string) =>
     apiClient.post<ApiResponse<{ user: User }>>('/api/auth/exchange-token', { token }),
+
+  /** One-time code from Discord OAuth redirect (`?success=true&code=...`). */
+  oauthExchange: (code: string) =>
+    apiClient.post<ApiResponse<{ user: User }>>('/api/auth/oauth-exchange', { code }),
   
   me: () =>
     apiClient.get<ApiResponse<User>>('/api/auth/me'),
@@ -209,6 +213,12 @@ export const automationAPI = {
   
   getAutomationAnalytics: (id: string) =>
     apiClient.get<ApiResponse<any>>(`/api/automations/${id}/analytics`),
+};
+
+// Automation templates — `apps/server` TemplateController @ `GET /api/templates`
+export const automationTemplatesAPI = {
+  list: (params?: { category?: string }) =>
+    apiClient.get<ApiResponse<any[]>>('/api/templates', { params }),
 };
 
 // Cases API - matches backend /api/cases endpoints
@@ -537,8 +547,8 @@ export const actionsAPI = {
   createAction: (data: any) =>
     apiClient.post<ApiResponse<any>>('/api/actions', data),
   
-  getActions: () =>
-    apiClient.get<ApiResponse<any[]>>('/api/actions'),
+  getActions: (params?: { limit?: number; offset?: number }) =>
+    apiClient.get<ApiResponse<any[]>>('/api/actions', { params }),
 };
 
 // Messages API - matches backend /api/messages endpoints  

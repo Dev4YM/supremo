@@ -8,7 +8,7 @@
 
 ## Executive summary
 
-The project is a **large monorepo** combining a **NestJS + Prisma + PostgreSQL** backend (Discord bot, REST API, optional Bull queues, Socket.IO) with a **Next.js 16** dashboard. The **data model and module surface area suggest an enterprise moderation platform**; **implementation quality is uneven**: several **security-sensitive defects** exist in auth and realtime code, **RBAC/permission wiring was partially broken** for routes without `GuildGuard`, the **web UI mixes real API calls with hard-coded mock data**, and **two parallel App Router trees** create confusion and unauthenticated demo pages. Automated tests are **sparse** relative to scope. Overall maturity: **internal alpha / prototype**, not production-hardened without substantial remediation.
+The project is a **large monorepo** combining a **NestJS + Prisma + PostgreSQL** backend (Discord bot, REST API, optional Bull queues, Socket.IO) with a **Next.js 16** dashboard. The **data model and module surface area suggest an enterprise moderation platform**; **implementation quality is uneven** but a **remediation pass** addressed the highest-risk auth/RBAC/realtime issues, **removed `vm2`**, **aligned `AppModule` HTTP surface** closer to `ApiModule`, **replaced the global `JSON.stringify` BigInt patch** with an interceptor, and **rewired primary dashboard widgets** to guild-scoped APIs instead of `mock-data`. Automated tests remain **limited** relative to scope (unit tests for OAuth exchange codes and `PermissionGuard`; **HTTP supertest suite** for session cookie, Bearer token, and `x-guild-id` / `GuildGuard` with mocked Prisma/RBAC). Overall maturity: **internal alpha**, closer to a maintainable internal pilot than before, still not production-hardened without E2E coverage and further automation hardening.
 
 ---
 
@@ -17,17 +17,17 @@ The project is a **large monorepo** combining a **NestJS + Prisma + PostgreSQL**
 ### What exists
 
 - `main.ts`: env validation; `PROCESS_TYPE` of `api` → HTTP `ApiModule`; `bot` → `BotModule` application context (no HTTP); default `all` → `AppModule`.
-- Global `JSON.stringify` monkey-patch for `BigInt` serialization.
+- **`BigIntSerializationInterceptor`** (global) for API JSON responses instead of monkey-patching `JSON.stringify`.
 - Swagger at `/api/docs` when HTTP server starts.
 
 ### Findings
 
-- **`all` vs `api` divergence:** `ApiModule` (`api-server`) includes `WebsocketModule`, `HealthModule`, `SetupModule`, explicit `QueueModule`; `AppModule` does not include websocket/health/setup the same way. Operators can ship the wrong topology by accident.
-- **Global `JSON.stringify` patch** affects every library in-process; surprising for observability and third-party code.
+- **`all` vs `api` divergence:** `ApiModule` (`api-server`) still carries some wiring differences (e.g. queue layout); **`AppModule` now also imports** `WebsocketModule`, `HealthModule`, and `SetupModule` to reduce accidental drift when running `PROCESS_TYPE=all`.
+- ~~**Global `JSON.stringify` patch**~~ **Addressed:** response interceptor serializes BigInt safely without mutating global JSON.
 
 ### Verdict
 
-**Refactor** process documentation and dev/prod matrices; consider removing `JSON.stringify` global patch in favor of a response interceptor or serializer.
+**Done / ongoing:** topology documented in `docs/DEPLOYMENT-TOPOLOGY.md`; prefer explicit `api` vs `bot` processes in production. BigInt handled via interceptor.
 
 ---
 
@@ -62,18 +62,18 @@ The project is a **large monorepo** combining a **NestJS + Prisma + PostgreSQL**
 
 ### What works
 
-- Register/login, session cookie, Discord code exchange (`POST /api/auth/discord`), `exchange-token`, `session` / `me`, logout.
+- Register/login, session cookie, Discord code exchange (`POST /api/auth/discord`), `exchange-token`, **`oauth-exchange`** (preferred after browser redirect), `session` / `me`, logout.
 - Session from `session_token` cookie or `Authorization: Bearer`.
 
 ### Critical issues (addressed in code where noted)
 
 1. **Hardcoded frontend URLs** in `GET /api/auth/discord/callback` pointed to a LAN IP (`192.168.100.200:7634`) — breaks every other deployment.
 2. **Session cookie `secure: false` always** — unacceptable for HTTPS production.
-3. **OAuth success redirect** placed **session token and full `user` JSON in query string** — leaks credentials and PII to logs, history, Referer; reduced in fix by dropping `user` from query (token still a known limitation for cross-origin dev until same-site deployment).
+3. **OAuth success redirect** originally placed **session token and full `user` JSON in query string** — leaks credentials and PII. **Fixed:** `user` JSON removed early; **superseded** by **short-lived one-time `code`** + `POST /api/auth/oauth-exchange` (browser never sees raw session token in the happy path). Legacy `?token=` still supported for older clients.
 
 ### Verdict
 
-**Refactor** auth until production uses HTTPS-only cookies and no long-lived secrets in URLs (one-time codes or same-origin callback).
+**Production path:** HTTPS-only cookies (`NODE_ENV` / `COOKIE_SECURE`) + **one-time OAuth exchange codes**; keep phasing out `exchange-token` from URLs entirely when all clients are updated.
 
 ---
 
@@ -163,12 +163,12 @@ The project is a **large monorepo** combining a **NestJS + Prisma + PostgreSQL**
 
 ### Findings
 
-- **`vm2`** executes tenant-controlled logic. **`vm2` is unmaintained** and has a poor security track record — **not production-acceptable** for arbitrary user/guild code in the API process.
-- Auto-mod and detectors include **explicit placeholders** (e.g. toxicity/NSFW stubs, spam detector placeholder return).
+- **`vm2` removed:** `custom-code` / `condition` automation actions **fail closed** with an explicit message instead of executing tenant code in-process.
+- Auto-mod and detectors still include **explicit placeholders** (e.g. toxicity/NSFW stubs); spam logic was improved but ML-related paths remain **non-production** until real integrations exist.
 
 ### Verdict
 
-**Remove or replace** `vm2` with a safe DSL or out-of-process worker; treat ML-related auto-mod paths as **non-production** until real integrations exist.
+**Next:** introduce a **safe DSL or out-of-process worker** if tenant-defined logic is required again; treat ML-related auto-mod paths as **non-production** until real integrations exist.
 
 ---
 
@@ -193,11 +193,11 @@ The project is a **large monorepo** combining a **NestJS + Prisma + PostgreSQL**
 
 ### Findings
 
-- Jest configured; **very few** specs under `apps/server/test/` relative to thousands of lines of application code.
+- Jest configured; coverage remains thin relative to scope. **Unit tests** under `apps/server/src/**` cover **OAuth exchange codes** (`SessionService`) and **`PermissionGuard`**. **HTTP integration tests** under `apps/server/test/**` (supertest) exercise **`POST /api/auth/oauth-exchange`**, **`GET /api/auth/me`** (cookie + Bearer), and **`x-guild-id`** with `SessionGuard` + `GuildGuard` using mocked `PrismaService` / `RbacService` (no real database).
 
 ### Verdict
 
-**Critical gap** for auth, RBAC, and guild-scoped APIs.
+**Critical gap** remains for E2E and supertest coverage of HTTP controllers; continue expanding tests for auth, RBAC, and guild-scoped APIs.
 
 ---
 
@@ -214,18 +214,17 @@ The project is a **large monorepo** combining a **NestJS + Prisma + PostgreSQL**
 
 ### Mock / demo data
 
-- `lib/mock-data.ts` drives **stats-cards, activity-chart, ban-list, automod-panel, moderators-panel, recent-actions, channel-activity**, etc.
-- **`app/dashboard/automation/page.tsx`:** real `useAutomations` plus **hard-coded** stats/workflow rows.
-- **`app/(dashboard)/*`:** parallel routes like `/users`, `/analytics` with **no `AuthGuard`** in that layout; **`(dashboard)/users/page.tsx`** uses **inline mock users**.
+- **`lib/mock-data.ts`** was **removed**; primary dashboard widgets use TanStack Query + guild APIs.
+- **`app/dashboard/automation/page.tsx`:** uses real `useAutomations` / templates where applicable; any remaining static copy should be flagged per-page.
 
 ### Routing / UX debt
 
 - **`app/dashboard/*`:** primary product path (sidebar links here); includes `AuthGuard` + guild setup in `app/dashboard/layout.tsx`.
-- **`app/(dashboard)/*`:** duplicate shell, wrong auth posture, mock-heavy — **technical debt or abandoned spike**.
+- **`app/(dashboard)/*` duplicate tree:** **removed** in this remediation cycle.
 
 ### Verdict
 
-**Remove or merge** `(dashboard)` tree; replace mock-driven widgets with API-backed data or dev-only flags.
+**Done for core widgets:** duplicate route tree removed; mock-driven dashboard components replaced with API-backed data. **`lib/mock-data.ts` removed** (no remaining imports).
 
 ---
 
@@ -235,10 +234,10 @@ The project is a **large monorepo** combining a **NestJS + Prisma + PostgreSQL**
 |-------|----------|--------------------------------|
 | Hardcoded OAuth redirect host | High | **Fixed** (`WEB_URL` / default) |
 | Cookie not secure in production | High | **Fixed** (`NODE_ENV` / `COOKIE_SECURE`) |
-| Token + user in OAuth redirect query | High | **Partially fixed** (user JSON removed; token still documented risk) |
+| Token + user in OAuth redirect query | High | **Fixed** (one-time `code` + `POST /api/auth/oauth-exchange`; legacy `token` still supported) |
 | WS `subscribe_guild` without ACL | High | **Fixed** |
-| `vm2` user code | Critical | **Documented** — not removed in this pass |
-| Duplicate unauthenticated dashboard routes | Medium | **Documented** — not removed in this pass |
+| `vm2` user code | Critical | **Fixed** — dependency removed; custom-code / condition actions fail closed with explicit message |
+| Duplicate unauthenticated dashboard routes | Medium | **Fixed** — `app/(dashboard)` removed; primary path is `app/dashboard/*` |
 | `PermissionGuard` without guild | High | **Fixed** |
 | Debug `ADMIN` vs seeded keys | Medium | **Fixed** → `SYSTEM_ADMIN` |
 | Missing `GuildGuard` on analytics routes | High | **Fixed** |
@@ -247,8 +246,8 @@ The project is a **large monorepo** combining a **NestJS + Prisma + PostgreSQL**
 
 ## 13. Recommendations (priority)
 
-1. **Security:** Remove `vm2` user execution path; add E2E tests for OAuth, cookies, and guild ACLs.
-2. **Web:** Delete `app/(dashboard)` or merge behind same `AuthGuard`; remove `mock-data` from production bundles.
+1. **Security:** ~~Remove `vm2`~~ (done); add E2E tests for OAuth, cookies, and guild ACLs.
+2. **Web:** ~~Delete `app/(dashboard)`~~ (done); ~~remove mock-driven dashboard widgets~~ (done); ~~delete `lib/mock-data.ts`~~ (done).
 3. **Ops:** Standardize on `PROCESS_TYPE=api` + `bot` + Redis + Postgres; document ports and cookie domains for same-site auth.
 4. **Quality:** Add Jest/supertest (or e2e) for permission matrix and critical controllers.
 
@@ -264,9 +263,9 @@ The project is a **large monorepo** combining a **NestJS + Prisma + PostgreSQL**
 | Bull queues | Partial (Redis-dependent) |
 | Socket.IO realtime | Prototype; web unused |
 | RBAC | Mostly working after guard fixes |
-| Automation / workflows | Partial; unsafe execution primitive |
+| Automation / workflows | Partial; in-process custom code path removed (`vm2`); use safe DSL or worker for tenant logic |
 | Auto-mod / ML claims | Partial / placeholder detectors |
-| Next dashboard | Partial; mixed mock and real data |
+| Next dashboard | Primary widgets use guild APIs; `lib/mock-data.ts` removed |
 
 ---
 
@@ -288,7 +287,22 @@ The following changes were applied in the same session as this report:
 | Env validation warns if `WEB_URL`/`FRONTEND_URL` missing; documents `COOKIE_SECURE` | `env.validation.ts` |
 | `.env.example` aligned with web port 7634 and CORS for local dev | `.env.example` |
 
-Not addressed in this pass: removing `vm2`, deleting `app/(dashboard)` duplicate tree, replacing dashboard mock data.
+**Follow-up implementation (same audit cycle):**
+
+| Change | Files |
+|--------|--------|
+| Global `JSON.stringify` BigInt patch replaced with `BigIntSerializationInterceptor` | `main.ts`, `common/interceptors/bigint-serialization.interceptor.ts` |
+| `AppModule` imports `HealthModule`, `SetupModule`, `WebsocketModule` for closer parity with API topology | `app.module.ts` |
+| PROCESS_TYPE / ports / OAuth notes | `docs/DEPLOYMENT-TOPOLOGY.md` |
+| OAuth redirect uses one-time `code`; `POST /api/auth/oauth-exchange`; web callback + `authAPI.oauthExchange` | `session.service.ts`, `auth.controller.ts`, `apps/web/app/auth/callback/page.tsx`, `apps/web/lib/api.ts` |
+| Removed `vm2`; custom-code / condition actions fail closed | `apps/server/package.json`, `automation/actions/utility/custom-code.action.ts`, `condition.action.ts` |
+| Spam detector repeated-message logic | `bot-worker/intelligence/detectors/spam.detector.ts` |
+| Auto-mod `GET` rules returns all rules; `scanMessage` skips disabled rules | `auto-mod.service.ts` |
+| Dashboard widgets use real hooks (`useGuildModerationActions`, engagement, auto-mod, Discord members/channels) | `apps/web/components/dashboard/*.tsx`, `apps/web/app/dashboard/moderators/page.tsx` |
+| `actionsAPI.getActions(params)`; `useGuildModerationActions`; automation list query key `actionDefinitions` | `apps/web/lib/api.ts`, `apps/web/lib/hooks/use-api.ts` |
+| Jest: OAuth exchange map + `PermissionGuard` matrix | `session.service.spec.ts`, `permission.guard.spec.ts` |
+| Supertest: OAuth cookie, Bearer, `x-guild-id` + `GuildGuard` | `test/auth-guild.http.e2e-spec.ts`, `test/jest-http-e2e.json`, `package.json` `test:e2e` |
+| Removed unused `apps/web/lib/mock-data.ts` | (deleted) |
 
 ---
 

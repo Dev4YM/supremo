@@ -19,25 +19,43 @@ function AuthCallbackContent() {
   const [error, setError] = useState<string | null>(null);
   const [processed, setProcessed] = useState(false);
 
-  // Mutation to exchange token for session cookie
+  const finishLogin = (user: { id: string; email?: string | null; username: string; avatar?: string | null; discordId?: string | null; createdAt?: string | Date }) => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    queryClient.setQueryData(queryKeys.auth.me, user);
+    setStatus('success');
+    toast.success('Successfully logged in!');
+    setTimeout(() => {
+      router.push('/dashboard');
+    }, 1500);
+  };
+
+  const oauthExchangeMutation = useMutation({
+    mutationFn: (code: string) => authAPI.oauthExchange(code),
+    onSuccess: (response) => {
+      const user = response.data?.data?.user;
+      if (!user) {
+        setStatus('error');
+        setError('Invalid authentication response');
+        toast.error('Authentication failed');
+        return;
+      }
+      finishLogin(user);
+    },
+    onError: (error: any) => {
+      console.error('OAuth code exchange failed:', error);
+      setStatus('error');
+      setError(error.response?.data?.message || 'Failed to establish session');
+      toast.error('Authentication failed');
+    },
+  });
+
+  // Legacy: raw session token in URL (avoid in new deployments; prefer `code` + oauth-exchange)
   const exchangeTokenMutation = useMutation({
     mutationFn: (token: string) => authAPI.exchangeToken(token),
     onSuccess: (response) => {
       const user = response.data.data.user;
-      
-      // Clear any old localStorage data
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      
-      // Update React Query cache
-      queryClient.setQueryData(queryKeys.auth.me, user);
-      
-      setStatus('success');
-      toast.success('Successfully logged in!');
-      
-      setTimeout(() => {
-        router.push('/dashboard');
-      }, 1500);
+      finishLogin(user);
     },
     onError: (error: any) => {
       console.error('Token exchange failed:', error);
@@ -52,8 +70,8 @@ function AuthCallbackContent() {
     if (processed) return;
 
     const success = searchParams.get('success');
+    const exchangeCode = searchParams.get('code');
     const token = searchParams.get('token');
-    const userParam = searchParams.get('user');
     const errorParam = searchParams.get('error');
 
     // Mark as processed to prevent re-execution
@@ -66,8 +84,12 @@ function AuthCallbackContent() {
       return;
     }
 
-    if (success && token) {
-      // Exchange the token for a session cookie
+    if (success === 'true' && exchangeCode) {
+      oauthExchangeMutation.mutate(exchangeCode);
+      return;
+    }
+
+    if (success === 'true' && token) {
       exchangeTokenMutation.mutate(token);
       return;
     }
@@ -75,7 +97,7 @@ function AuthCallbackContent() {
     // If we get here, something went wrong
     setStatus('error');
     setError('Invalid authentication response');
-  }, [searchParams, processed, exchangeTokenMutation]);
+  }, [searchParams, processed, exchangeTokenMutation, oauthExchangeMutation]);
 
   const renderContent = () => {
     switch (status) {

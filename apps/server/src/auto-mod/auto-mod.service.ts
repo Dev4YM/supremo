@@ -13,7 +13,7 @@ export class AutoModService {
 
   async getRules(guildId: string) {
     return this.prisma.autoModRule.findMany({
-      where: { guildId, enabled: true },
+      where: { guildId },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -54,6 +54,10 @@ export class AutoModService {
     const results = [];
 
     for (const rule of rules) {
+      if (!rule.enabled) {
+        continue;
+      }
+
       // Check if rule applies to this channel
       if (rule.channels.length > 0 && !rule.channels.includes(channelId)) {
         continue;

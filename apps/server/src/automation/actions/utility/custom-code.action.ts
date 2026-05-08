@@ -1,48 +1,25 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { BaseAction } from '../base.action';
 import { WorkflowContext, ActionResult } from '../../interfaces/action.interface';
-// @ts-ignore - vm2 doesn't have TypeScript definitions
-import { VM } from 'vm2';
 
 @Injectable()
 export class CustomCodeAction extends BaseAction {
   private readonly logger = new Logger(CustomCodeAction.name);
   type = 'custom_code';
   name = 'Custom Code';
-  description = 'Execute custom JavaScript code';
+  description = 'Execute custom JavaScript code (disabled — vm2 removed for security)';
   icon = '💻';
   category = 'utility';
 
-  async execute(context: WorkflowContext, config: any): Promise<ActionResult> {
-    try {
-      const code = config.code;
-
-      if (!code) {
-        return this.failure('Code is required');
-      }
-
-      // Create safe sandbox with limited access
-      const vm = new VM({
-        timeout: 5000,
-        sandbox: {
-          user: context.user || {},
-          message: context.message || {},
-          guild: context.guild || {},
-          channel: context.channel || {},
-          role: context.role || {},
-          variables: context.variables || {},
-          trigger: context.trigger || {},
-          // Helper functions
-          log: (...args: any[]) => this.logger.log('[CustomCode]', ...args),
-        },
-      });
-
-      const result = vm.run(code);
-
-      return this.success({ result });
-    } catch (error: any) {
-      return this.failure(error.message || 'Failed to execute custom code', { error: error.toString() });
+  async execute(_context: WorkflowContext, config: any): Promise<ActionResult> {
+    if (!config?.code) {
+      return this.failure('Code is required');
     }
+    this.logger.warn('custom_code action invoked but in-process JS execution is disabled (vm2 removed).');
+    return this.failure(
+      'Custom code execution is disabled. The previous vm2-based implementation was removed for security. ' +
+        'Use supported automation actions or an external worker with a safe DSL.',
+    );
   }
 
   validate(config: any): boolean {
@@ -53,13 +30,12 @@ export class CustomCodeAction extends BaseAction {
     return {
       type: 'object',
       properties: {
-        code: { 
-          type: 'string', 
-          description: 'JavaScript code to execute (sandboxed, 5s timeout)',
+        code: {
+          type: 'string',
+          description: 'Not executed — reserved for future safe execution backend.',
         },
       },
       required: ['code'],
     };
   }
 }
-

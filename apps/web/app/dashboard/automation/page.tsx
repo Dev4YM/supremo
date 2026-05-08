@@ -3,7 +3,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Progress } from "@/components/ui/progress"
 import { Skeleton } from "@/components/ui/skeleton"
 import { 
@@ -11,7 +10,6 @@ import {
   Bot, 
   Play, 
   Pause,
-  Settings,
   Plus,
   Clock,
   CheckCircle2,
@@ -31,102 +29,37 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import { useAutomations, useUpdateAutomation, useDeleteAutomation, useExecuteAutomation } from "@/lib/hooks/use-api"
+import {
+  useAutomations,
+  useAutomationTemplates,
+  useUpdateAutomation,
+  useDeleteAutomation,
+  useExecuteAutomation,
+} from "@/lib/hooks/use-api"
 import { toast } from "sonner"
 import Link from "next/link"
 
-const automationStats = [
-  { label: "Active Workflows", value: "12", change: "+3 this week", icon: Bot, color: "text-primary" },
-  { label: "Executions Today", value: "1,247", change: "+18%", icon: Zap, color: "text-emerald-500" },
-  { label: "Success Rate", value: "98.5%", change: "+0.2%", icon: CheckCircle2, color: "text-green-500" },
-  { label: "Avg Runtime", value: "1.2s", change: "-0.3s", icon: Clock, color: "text-blue-500" },
-]
-
-const workflows = [
-  {
-    id: "1",
-    name: "Welcome New Members",
-    description: "Send welcome message and assign roles to new members",
-    status: "active",
-    executions: 156,
-    successRate: 100,
-    lastRun: "2 minutes ago",
-    triggers: ["member_join"],
-    actions: ["send_message", "add_role"],
-  },
-  {
-    id: "2", 
-    name: "Auto-Moderation",
-    description: "Detect and handle spam, profanity, and inappropriate content",
-    status: "active",
-    executions: 892,
-    successRate: 97.8,
-    lastRun: "5 minutes ago",
-    triggers: ["message_create"],
-    actions: ["delete_message", "warn_user", "timeout"],
-  },
-  {
-    id: "3",
-    name: "Reaction Roles",
-    description: "Assign roles based on message reactions",
-    status: "active", 
-    executions: 234,
-    successRate: 99.1,
-    lastRun: "12 minutes ago",
-    triggers: ["reaction_add"],
-    actions: ["add_role"],
-  },
-  {
-    id: "4",
-    name: "Ticket System",
-    description: "Create support tickets and manage user requests",
-    status: "paused",
-    executions: 67,
-    successRate: 95.5,
-    lastRun: "2 hours ago",
-    triggers: ["button_click"],
-    actions: ["create_channel", "send_message"],
-  },
-  {
-    id: "5",
-    name: "Level Up Notifications",
-    description: "Notify users when they reach new experience levels",
-    status: "active",
-    executions: 45,
-    successRate: 100,
-    lastRun: "1 hour ago",
-    triggers: ["level_up"],
-    actions: ["send_message", "add_role"],
-  },
-]
-
-const statusConfig = {
-  active: { color: "text-emerald-500", bg: "bg-emerald-500/10", label: "Active" },
-  paused: { color: "text-amber-500", bg: "bg-amber-500/10", label: "Paused" },
-  error: { color: "text-red-500", bg: "bg-red-500/10", label: "Error" },
-}
-
-const templates = [
-  { name: "Welcome Bot", description: "Greet new members and assign roles", icon: Bot, uses: 1247 },
-  { name: "Auto Moderator", description: "Detect and handle rule violations", icon: AlertTriangle, uses: 892 },
-  { name: "Reaction Roles", description: "Role assignment via reactions", icon: Zap, uses: 567 },
-  { name: "Ticket System", description: "Support ticket management", icon: Settings, uses: 234 },
-]
-
 export default function AutomationPage() {
   const { data: automations = [], isLoading, error, refetch } = useAutomations();
+  const { data: templates = [], isLoading: templatesLoading } = useAutomationTemplates();
   const updateAutomationMutation = useUpdateAutomation();
   const deleteAutomationMutation = useDeleteAutomation();
   const executeAutomationMutation = useExecuteAutomation();
 
-  // Calculate real stats
+  const avgSuccessNum =
+    automations.length > 0
+      ? automations.reduce((sum: number, a: any) => sum + (Number(a.successRate) || 0), 0) /
+        automations.length
+      : 0;
+
   const stats = {
     active: automations.filter((a: any) => a.enabled).length,
     total: automations.length,
-    executions: automations.reduce((sum: number, a: any) => sum + (a.executionCount || 0), 0),
-    successRate: automations.length > 0 ? 
-      (automations.reduce((sum: number, a: any) => sum + (a.successRate || 0), 0) / automations.length).toFixed(1) : 0,
-  }
+    executions: automations.reduce((sum: number, a: any) => sum + (Number(a.executionCount) || 0), 0),
+    successRate: avgSuccessNum.toFixed(1),
+  };
+
+  const approxErrorRate = Math.max(0, 100 - Number(stats.successRate)).toFixed(1);
 
   const handleToggleAutomation = async (id: string, enabled: boolean) => {
     try {
@@ -390,26 +323,42 @@ export default function AutomationPage() {
               </div>
             </CardHeader>
             <CardContent className="pt-0">
-              <div className="space-y-2">
-                {templates.map((template) => (
-                  <Button
-                    key={template.name}
-                    variant="outline"
-                    className="h-auto w-full justify-start p-3 border-border/50 bg-transparent hover:bg-secondary/40"
-                  >
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 mr-3">
-                      <template.icon className="h-4 w-4 text-primary" />
+              {templatesLoading ? (
+                <div className="space-y-2">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <Skeleton key={i} className="h-14 w-full rounded-lg" />
+                  ))}
+                </div>
+              ) : templates.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No templates are configured for this workspace yet. Use{" "}
+                  <span className="font-medium text-foreground">Create</span> to build an automation from scratch.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {templates.map((template: any) => (
+                    <div
+                      key={template.id ?? template.key}
+                      className="flex w-full items-start gap-3 rounded-lg border border-border/50 bg-transparent p-3"
+                    >
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                        <Bot className="h-4 w-4 text-primary" />
+                      </div>
+                      <div className="min-w-0 flex-1 text-left">
+                        <p className="text-sm font-medium">{template.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {template.description || "No description"}
+                        </p>
+                      </div>
+                      {template.category ? (
+                        <Badge variant="outline" className="shrink-0 border-0 bg-muted text-[10px] text-muted-foreground">
+                          {template.category}
+                        </Badge>
+                      ) : null}
                     </div>
-                    <div className="flex-1 text-left">
-                      <p className="text-sm font-medium">{template.name}</p>
-                      <p className="text-xs text-muted-foreground">{template.description}</p>
-                    </div>
-                    <Badge variant="outline" className="ml-2 text-[10px] border-0 bg-muted text-muted-foreground">
-                      {template.uses}
-                    </Badge>
-                  </Button>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -425,27 +374,29 @@ export default function AutomationPage() {
               <div className="space-y-4">
                 <div>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Success Rate</span>
-                    <span className="font-medium">98.5%</span>
+                    <span className="text-muted-foreground">Avg. success rate (automations)</span>
+                    <span className="font-medium">{stats.total ? `${stats.successRate}%` : "—"}</span>
                   </div>
-                  <Progress value={98.5} className="mt-2 h-2" />
+                  <Progress
+                    value={stats.total ? Math.min(100, Number(stats.successRate)) : 0}
+                    className="mt-2 h-2"
+                  />
                 </div>
                 <div>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Avg Response Time</span>
-                    <span className="font-medium">1.2s</span>
+                    <span className="text-muted-foreground">Approx. failure share</span>
+                    <span className="font-medium">{stats.total ? `${approxErrorRate}%` : "—"}</span>
                   </div>
-                  <Progress value={75} className="mt-2 h-2" />
+                  <Progress
+                    value={stats.total ? Math.min(100, Number(approxErrorRate)) : 0}
+                    className="mt-2 h-2"
+                  />
                 </div>
-                <div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Error Rate</span>
-                    <span className="font-medium">1.5%</span>
-                  </div>
-                  <Progress value={1.5} className="mt-2 h-2" />
-                </div>
-                <Button variant="outline" className="w-full border-border/50 bg-transparent">
-                  View Analytics
+                <p className="text-xs text-muted-foreground">
+                  Metrics are derived from stored automation records. For richer charts, use analytics.
+                </p>
+                <Button variant="outline" className="w-full border-border/50 bg-transparent" asChild>
+                  <Link href="/dashboard/analytics">View analytics</Link>
                 </Button>
               </div>
             </CardContent>

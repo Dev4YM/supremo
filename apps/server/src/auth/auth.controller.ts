@@ -330,12 +330,11 @@ export class AuthController {
         userAgent,
       );
 
-      // Redirect with short-lived session token (client exchanges for httpOnly cookie).
-      // User profile is returned from POST /exchange-token — avoid serializing user in the URL.
+      const exchangeCode = this.sessionService.issueOAuthExchangeCode(result.sessionToken);
       return res.redirect(
         this.buildAuthCallbackUrl({
           success: 'true',
-          token: result.sessionToken,
+          code: exchangeCode,
         }),
       );
     } catch (error) {
@@ -411,6 +410,72 @@ export class AuthController {
     } catch (error) {
       console.error('Token exchange error:', error);
       throw new BadRequestException('Failed to exchange token for session');
+    }
+  }
+
+  /**
+   * Exchange one-time OAuth redirect `code` (from GET /discord/callback) for httpOnly session cookie.
+   * Preferred over passing the raw session token in the browser URL.
+   */
+  @Post('oauth-exchange')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Exchange OAuth redirect code for session',
+    description:
+      'Consumes a short-lived code issued by GET /api/auth/discord/callback and sets the session cookie.',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        code: { type: 'string', description: 'One-time code from auth callback query' },
+      },
+      required: ['code'],
+    },
+  })
+  @ApiStandardResponses()
+  @ApiResponse({ status: 200, description: 'Session established successfully' })
+  async oauthExchange(@Body() body: { code: string }, @Res() res: Response) {
+    const { code } = body;
+    if (!code) {
+      throw new BadRequestException('Code is required');
+    }
+
+    const token = this.sessionService.consumeOAuthExchangeCode(code);
+    if (!token) {
+      throw new BadRequestException('Invalid or expired code');
+    }
+
+    try {
+      const session = await this.sessionService.validateSession(token);
+      if (!session || !session.botUserId) {
+        throw new BadRequestException('Invalid or expired session');
+      }
+
+      const user = await this.authService.getUserById(session.botUserId);
+      if (!user) {
+        throw new BadRequestException('User not found');
+      }
+
+      this.setSessionCookie(res, token);
+
+      return res.json({
+        success: true,
+        data: {
+          user: {
+            id: user.id,
+            email: user.email,
+            username: user.username,
+            avatar: user.avatar,
+            discordId: user.discordId,
+            createdAt: user.createdAt,
+          },
+        },
+        message: 'Session established successfully',
+      });
+    } catch (error) {
+      console.error('OAuth code exchange error:', error);
+      throw new BadRequestException('Failed to establish session');
     }
   }
 

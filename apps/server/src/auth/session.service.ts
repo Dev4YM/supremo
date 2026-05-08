@@ -123,6 +123,47 @@ export class SessionService {
   }
 
   /**
+   * One-time browser OAuth handoff: avoids putting the raw session token in the URL.
+   * In-memory only — use Redis (or similar) when running multiple API replicas.
+   */
+  private readonly oauthExchangeTtlMs = 5 * 60 * 1000;
+  private readonly oauthExchanges = new Map<string, { sessionToken: string; expiresAt: number }>();
+
+  issueOAuthExchangeCode(sessionToken: string): string {
+    const code = crypto.randomBytes(24).toString('hex');
+    this.oauthExchanges.set(code, {
+      sessionToken,
+      expiresAt: Date.now() + this.oauthExchangeTtlMs,
+    });
+    this.pruneOAuthExchanges();
+    return code;
+  }
+
+  consumeOAuthExchangeCode(code: string): string | null {
+    if (!code) {
+      return null;
+    }
+    const row = this.oauthExchanges.get(code);
+    if (!row || row.expiresAt < Date.now()) {
+      if (row) {
+        this.oauthExchanges.delete(code);
+      }
+      return null;
+    }
+    this.oauthExchanges.delete(code);
+    return row.sessionToken;
+  }
+
+  private pruneOAuthExchanges() {
+    const now = Date.now();
+    for (const [k, v] of this.oauthExchanges) {
+      if (v.expiresAt < now) {
+        this.oauthExchanges.delete(k);
+      }
+    }
+  }
+
+  /**
    * Hash token for storage
    */
   private hashToken(token: string): string {

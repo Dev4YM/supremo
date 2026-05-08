@@ -5,7 +5,8 @@ import {
   userAPI, 
   incidentAPI, 
   analyticsAPI, 
-  automationAPI, 
+  automationAPI,
+  automationTemplatesAPI,
   configAPI,
   casesAPI,
   autoModAPI,
@@ -71,9 +72,10 @@ export const queryKeys = {
   },
   automation: {
     all: (params?: any) => ['automations', params] as const,
+    templates: (params?: { category?: string }) => ['automations', 'templates', params] as const,
     detail: (id: string) => ['automations', id] as const,
     placeholders: (actionType?: string) => ['automations', 'placeholders', actionType] as const,
-    actions: ['automations', 'actions'] as const,
+    actionDefinitions: ['automations', 'action-definitions'] as const,
     runs: (id: string) => ['automations', id, 'runs'] as const,
     analytics: (id: string) => ['automations', id, 'analytics'] as const,
   },
@@ -134,6 +136,7 @@ export const queryKeys = {
   },
   actions: {
     all: ['actions'] as const,
+    list: (params?: { limit?: number; offset?: number }) => ['actions', 'list', params] as const,
   },
   messages: {
     sent: ['messages', 'sent'] as const,
@@ -554,6 +557,23 @@ export const useAnalyticsHealth = () => {
   });
 };
 
+/** Guild aggregate counts from `GET /api/stats` (requires guild + ANALYTICS_VIEW). */
+export const useApiGuildStats = () => {
+  return useQuery({
+    queryKey: queryKeys.apiHealth.stats,
+    queryFn: async () => {
+      const response = await apiHealthAPI.getStats();
+      return extractResponseData(response, {
+        users: 0,
+        incidents: 0,
+        actions: 0,
+        pendingIncidents: 0,
+      });
+    },
+    staleTime: 60 * 1000,
+  });
+};
+
 // Automation Hooks - Updated to match backend API
 export const useAutomations = (params?: any) => {
   return useQuery({
@@ -567,6 +587,17 @@ export const useAutomations = (params?: any) => {
       }
     },
     staleTime: 1 * 60 * 1000,
+  });
+};
+
+export const useAutomationTemplates = (params?: { category?: string }) => {
+  return useQuery({
+    queryKey: queryKeys.automation.templates(params),
+    queryFn: async () => {
+      const response = await automationTemplatesAPI.list(params);
+      return extractResponseData(response, []);
+    },
+    staleTime: 5 * 60 * 1000,
   });
 };
 
@@ -602,7 +633,7 @@ export const useAutomationPlaceholders = (actionType?: string) => {
 
 export const useActionsList = () => {
   return useQuery({
-    queryKey: queryKeys.automation.actions,
+    queryKey: queryKeys.automation.actionDefinitions,
     queryFn: async () => {
       try {
         const response = await automationAPI.getActionsList();
@@ -612,6 +643,17 @@ export const useActionsList = () => {
       }
     },
     staleTime: 10 * 60 * 1000,
+  });
+};
+
+export const useGuildModerationActions = (params?: { limit?: number; offset?: number }) => {
+  return useQuery({
+    queryKey: queryKeys.actions.list(params),
+    queryFn: async () => {
+      const response = await actionsAPI.getActions(params);
+      return extractResponseData(response, []);
+    },
+    staleTime: 30 * 1000,
   });
 };
 
@@ -772,6 +814,17 @@ export const useAutoModRules = () => {
   });
 };
 
+export const useAutoModScans = () => {
+  return useQuery({
+    queryKey: queryKeys.autoMod.scans,
+    queryFn: async () => {
+      const response = await autoModAPI.getScans();
+      return extractResponseData(response, []);
+    },
+    staleTime: 2 * 60 * 1000,
+  });
+};
+
 export const useCreateAutoModRule = () => {
   const queryClient = useQueryClient();
   
@@ -783,6 +836,23 @@ export const useCreateAutoModRule = () => {
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.message || 'Failed to create auto-mod rule');
+    },
+  });
+};
+
+export const useUpdateAutoModRule = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ ruleId, data }: { ruleId: string; data: Record<string, unknown> }) =>
+      autoModAPI.updateRule(ruleId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.autoMod.rules });
+      queryClient.invalidateQueries({ queryKey: queryKeys.autoMod.scans });
+      toast.success('Rule updated');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to update rule');
     },
   });
 };

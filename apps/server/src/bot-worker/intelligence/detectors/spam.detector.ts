@@ -12,7 +12,10 @@ interface Check {
 @Injectable()
 export class SpamDetector {
   private readonly logger = new Logger(SpamDetector.name);
-  private readonly messageCache = new Map<string, Array<{ userId: string; timestamp: number }>>();
+  private readonly messageCache = new Map<
+    string,
+    Array<{ userId: string; timestamp: number; content: string }>
+  >();
 
   constructor(private prisma: PrismaService) {
     // Clean cache every 5 minutes
@@ -53,8 +56,12 @@ export class SpamDetector {
     }
 
     // Check for repeated content
+    const recentWindow = 30_000;
     const similarMessages = messages.filter(
-      (m) => m.userId === userId && this.similarContent(content, m.userId),
+      (m) =>
+        m.userId === userId &&
+        timestamp - m.timestamp < recentWindow &&
+        this.sameMessageContent(content, m.content),
     );
 
     if (similarMessages.length >= 3) {
@@ -83,16 +90,21 @@ export class SpamDetector {
     }
 
     // Store message in cache
-    messages.push({ userId, timestamp });
+    messages.push({ userId, timestamp, content: content.trim().slice(0, 500) });
     this.messageCache.set(cacheKey, messages);
 
     return { detected: false, confidence: 0, type: 'MESSAGE_SPAM' };
   }
 
-  private similarContent(content1: string, userId2: string): boolean {
-    // Simplified similarity check - in production, use more sophisticated algorithm
-    // For now, just check if content is identical
-    return false; // Placeholder
+  private sameMessageContent(a: string, b: string): boolean {
+    const x = a.trim().toLowerCase();
+    const y = b.trim().toLowerCase();
+    if (!x || !y) return false;
+    if (x === y) return true;
+    if (x.length >= 20 && y.length >= 20 && x.slice(0, 80) === y.slice(0, 80)) {
+      return true;
+    }
+    return false;
   }
 
   private cleanCache() {

@@ -29,6 +29,9 @@ import { OnboardingModule } from './onboarding/onboarding.module';
 import { TicketsModule } from './tickets/tickets.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { DebugModule } from './debug/debug.module';
+import { HealthModule } from './health/health.module';
+import { SetupModule } from './setup/setup.module';
+import { WebsocketModule } from './api-server/websocket/websocket.module';
 
 @Module({
   imports: [
@@ -41,6 +44,8 @@ import { DebugModule } from './debug/debug.module';
     DebugModule,
     SeedManagerModule,
     CacheManagerModule,
+    SetupModule,
+    HealthModule,
     DiscordModule,
     ModerationModule,
     IncidentsModule,
@@ -65,6 +70,7 @@ import { DebugModule } from './debug/debug.module';
     OnboardingModule,
     TicketsModule,
     AnalyticsModule,
+    WebsocketModule,
   ],
 })
 export class AppModule {}

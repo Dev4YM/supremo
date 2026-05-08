@@ -1,5 +1,6 @@
 "use client"
 
+import { useMemo } from "react"
 import {
   AreaChart,
   Area,
@@ -9,7 +10,8 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from "recharts"
-import { moderationActivity } from "@/lib/mock-data"
+import { useGuildModerationActions } from "@/lib/hooks/use-api"
+import { Loader2 } from "lucide-react"
 
 const chartColors = {
   warnings: "#f59e0b",
@@ -18,7 +20,15 @@ const chartColors = {
   deletions: "#10b981",
 }
 
-function CustomTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ dataKey: string; value: number; color: string }>; label?: string }) {
+function CustomTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean
+  payload?: Array<{ dataKey: string; value: number; color: string }>
+  label?: string
+}) {
   if (!active || !payload?.length) return null
 
   return (
@@ -39,12 +49,91 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
   )
 }
 
+function buildChartData(actions: Array<{ type: string; executedAt?: string | null }>, days: number) {
+  const keys: string[] = []
+  const display: string[] = []
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date()
+    d.setHours(0, 0, 0, 0)
+    d.setDate(d.getDate() - i)
+    keys.push(d.toISOString().slice(0, 10))
+    display.push(
+      d.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      }),
+    )
+  }
+
+  const rows = keys.map((iso, idx) => ({
+    key: iso,
+    date: display[idx]!,
+    warnings: 0,
+    bans: 0,
+    mutes: 0,
+    deletions: 0,
+  }))
+  const byKey = new Map(rows.map((r) => [r.key, r]))
+
+  for (const action of actions) {
+    if (!action.executedAt) continue
+    const dayKey = new Date(action.executedAt).toISOString().slice(0, 10)
+    const row = byKey.get(dayKey)
+    if (!row) continue
+    switch (action.type) {
+      case "WARN":
+        row.warnings++
+        break
+      case "BAN":
+        row.bans++
+        break
+      case "TIMEOUT":
+      case "KICK":
+        row.mutes++
+        break
+      case "DELETE_MESSAGES":
+        row.deletions++
+        break
+      default:
+        break
+    }
+  }
+
+  return rows.map(({ date, warnings, bans, mutes, deletions }) => ({
+    date,
+    warnings,
+    bans,
+    mutes,
+    deletions,
+  }))
+}
+
 export function ActivityChart() {
+  const { data: actions = [], isLoading, isError } = useGuildModerationActions({ limit: 500 })
+  const moderationActivity = useMemo(() => buildChartData(actions, 14), [actions])
+
+  if (isLoading) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-10 flex flex-col items-center gap-2 text-muted-foreground">
+        <Loader2 className="h-6 w-6 animate-spin" />
+        <p className="text-xs">Loading activity…</p>
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">
+        Could not load moderation activity.
+      </div>
+    )
+  }
+
   return (
     <div className="rounded-xl border border-border bg-card p-5">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-sm font-medium">Moderation Activity</h3>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           {Object.entries(chartColors).map(([key, color]) => (
             <div key={key} className="flex items-center gap-1.5">
               <div className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
@@ -53,6 +142,9 @@ export function ActivityChart() {
           ))}
         </div>
       </div>
+      <p className="mb-3 text-[11px] text-muted-foreground">
+        Last 14 days from guild action log. Mutes include timeouts and kicks; deletions are message purges.
+      </p>
       <div className="h-[280px] w-full">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={moderationActivity} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>

@@ -5,17 +5,7 @@ import { AppModule } from './app.module';
 import cookieParser from 'cookie-parser';
 import { validateEnv } from './config/env.validation';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
-
-// Handle BigInt serialization for JSON responses
-const originalJsonStringify = JSON.stringify;
-JSON.stringify = function(value: any, replacer?: any, space?: any) {
-  return originalJsonStringify(value, (key, val) => {
-    if (typeof val === 'bigint') {
-      return val.toString();
-    }
-    return val;
-  }, space);
-};
+import { BigIntSerializationInterceptor } from './common/interceptors/bigint-serialization.interceptor';
 
 async function bootstrap() {
   validateEnv();
@@ -55,6 +45,7 @@ async function bootstrap() {
   }
 
   const app = await NestFactory.create(moduleToLoad);
+  app.useGlobalInterceptors(new BigIntSerializationInterceptor());
 
   // CORS configuration - development allows all origins, production uses CORS_ORIGINS env var
   const isDevelopment = process.env.NODE_ENV !== 'production';
