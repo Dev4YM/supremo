@@ -1,0 +1,76 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'discord-bot/**'
+      - '.github/workflows/backend-ci.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'discord-bot/**'
+      - '.github/workflows/backend-ci.yml'
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: supremo_bot_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dir: ./discord-bot/node_modules
+
+      - name: Install dependencies
+        working-directory: ./discord-bot
+        run: npm ci
+
+      - name: Generate Prisma Client
+        working-directory: ./discord-bot
+        run: npx prisma generate
+
+      - name: Run ESLint
+        working-directory: ./discord-bot
+        run: npm run lint
+
+      - name: Run type check
+        working-directory: ./discord-bot
+        run: npx tsc --noEmit
+
+      - name: Run tests
+        working-directory: ./discord-bot
+        run: npm test -- --coverage --watchAll=false
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/supremo_bot_test?schema=public
+          NODE_ENV: test
+
+      - name: Build
+        working-directory: ./discord-bot
+        run: npm run build
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          directory: ./discord-bot/coverage
+          flags: backend
+

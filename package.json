@@ -1,0 +1,86 @@
+{
+  "name": "supremo-discord-bot",
+  "version": "1.0.0",
+  "description": "The most comprehensive open-source Discord moderation and automation platform",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "build:packages": "turbo run build --filter='./packages/*'",
+    "dev": "turbo run dev --parallel",
+    "dev:server": "turbo run dev --filter=apps/server",
+    "dev:web": "turbo run dev --filter=apps/web",
+    "start": "npm run build && concurrently \"npm run start:server\" \"npm run start:web\"",
+    "start:server": "npm run start --workspace=apps/server",
+    "start:web": "npm run start --workspace=apps/web",
+    "dev:both": "concurrently --names \"WEB,SERVER\" --prefix-colors \"cyan,yellow\" \"npm run dev --workspace=apps/web\" \"npm run dev --workspace=apps/server\"",
+    "lint": "turbo run lint",
+    "lint:fix": "turbo run lint:fix",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "type-check": "turbo run type-check",
+    "test": "turbo run test",
+    "test:watch": "turbo run test:watch",
+    "test:coverage": "turbo run test:coverage",
+    "test:e2e": "turbo run test:e2e --filter=apps/server",
+    "test:performance": "turbo run test:performance",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "reset": "npm run clean && npm install",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "turbo run build --filter='./packages/*' && changeset publish",
+    "db:generate": "turbo run db:generate --filter=apps/server",
+    "db:push": "turbo run db:push --filter=apps/server",
+    "db:migrate": "turbo run db:migrate --filter=apps/server",
+    "db:seed": "turbo run db:seed --filter=apps/server",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.26.2",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.45.0",
+    "eslint-config-next": "^14.0.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-import": "^2.28.0",
+    "eslint-plugin-jsx-a11y": "^6.7.1",
+    "eslint-plugin-react": "^7.33.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "prettier": "^3.0.0",
+    "turbo": "^1.10.0",
+    "typescript": "^5.0.0",
+    "concurrently": "^8.2.0",
+    "cross-env": "^7.0.3"
+  },
+  "packageManager": "npm@9.0.0",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/supremo-discord-bot.git"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "moderation",
+    "automation",
+    "typescript",
+    "nestjs",
+    "nextjs",
+    "monorepo"
+  ],
+  "author": "Supremo Team",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/yourusername/supremo-discord-bot/issues"
+  },
+  "homepage": "https://github.com/yourusername/supremo-discord-bot#readme"
+}

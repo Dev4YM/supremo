@@ -1,0 +1,40 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": false,
+    "esModuleInterop": true,
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "composite": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "strictPropertyInitialization": false,
+    "baseUrl": ".",
+    "paths": {
+      "@supremo/shared-types": ["./packages/shared-types/src"],
+      "@supremo/rules-engine": ["./packages/rules-engine/src"],
+      "@supremo/utils": ["./packages/utils/src"],
+      "@/*": ["./apps/web/src/*"],
+      "~/*": ["./apps/server/src/*"]
+    }
+  },
+  "exclude": [
+    "node_modules",
+    "dist",
+    "build",
+    ".next",
+    "coverage"
+  ]
+}

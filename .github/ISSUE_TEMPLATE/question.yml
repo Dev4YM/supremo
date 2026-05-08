@@ -1,0 +1,79 @@
+name: ❓ Question
+description: Ask a question about Supremo Discord Bot
+title: "[Question]: "
+labels: ["question", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have a question about Supremo? We're here to help! Please check our documentation first, then ask your question below.
+
+  - type: checkboxes
+    id: documentation-check
+    attributes:
+      label: Documentation Check
+      description: Have you checked our documentation?
+      options:
+        - label: I have checked the [README](../README.md)
+          required: true
+        - label: I have checked the [Documentation](../docs/)
+          required: true
+        - label: I have searched existing issues and discussions
+          required: true
+
+  - type: dropdown
+    id: question-type
+    attributes:
+      label: Question Type
+      description: What type of question is this?
+      options:
+        - Setup/Installation
+        - Configuration
+        - Usage/How-to
+        - Troubleshooting
+        - Development
+        - API Usage
+        - Discord Bot Setup
+        - Deployment
+        - Performance
+        - Security
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What would you like to know?
+      placeholder: Please describe your question in detail...
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Provide context about your setup, what you're trying to achieve, etc.
+      placeholder: |
+        What I'm trying to do: ...
+        My setup: ...
+        What I've tried: ...
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment (if relevant)
+      description: If your question is environment-specific, please provide details
+      value: |
+        - OS: 
+        - Node.js Version: 
+        - Supremo Version: 
+        - Deployment Method: 
+      render: markdown
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Information
+      description: Any additional information that might be helpful
