@@ -633,7 +633,7 @@ export default function ProfilePage() {
                   <div className="flex items-center gap-2">
                     <Input
                       type={showToken ? "text" : "password"}
-                      value="sk_live_51234567890abcdefghijklmnopqrstuvwxyz"
+                      value="sk_test_00000000000000000000000000000000"
                       readOnly
                       className="font-mono text-sm"
                     />
