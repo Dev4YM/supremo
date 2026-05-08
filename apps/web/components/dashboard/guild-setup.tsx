@@ -75,7 +75,7 @@ export function GuildSetup() {
                   className="flex items-center gap-4 p-4 rounded-xl border border-border/50 bg-secondary/20"
                 >
                   <Avatar className="h-12 w-12">
-                    <AvatarImage src={guild.icon} />
+                    <AvatarImage src={guild.icon ?? undefined} />
                     <AvatarFallback className="bg-primary/10 text-primary font-semibold">
                       {guild.name.charAt(0)}
                     </AvatarFallback>

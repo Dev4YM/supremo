@@ -250,11 +250,11 @@ export default function AntiRaidPage() {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="text-sm text-muted-foreground">Auto Lockdown</span>
-                        <Switch checked={displayConfig.autoLockdown} size="sm" />
+                        <Switch checked={displayConfig.autoLockdown} />
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-sm text-muted-foreground">Verification</span>
-                        <Switch checked={displayConfig.verificationEnabled} size="sm" />
+                        <Switch checked={displayConfig.verificationEnabled} />
                       </div>
                     </div>
                   </div>

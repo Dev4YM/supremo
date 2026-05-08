@@ -488,6 +488,12 @@ export const serverAPI = {
     apiClient.post<ApiResponse<any>>('/api/server/invites', data),
 };
 
+/** Prisma-backed dashboard audit trail (`GET /api/audit/logs`). */
+export const auditAPI = {
+  getGuildAuditLogs: (params?: { limit?: number; offset?: number }) =>
+    apiClient.get<ApiResponse<any[]>>('/api/audit/logs', { params }),
+};
+
 // Analytics API - matches backend /api/analytics endpoints  
 export const analyticsAPI = {
   getMemberGrowth: (days: number = 30) =>

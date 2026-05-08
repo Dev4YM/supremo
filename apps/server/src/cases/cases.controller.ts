@@ -9,8 +9,9 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { CasesService } from './cases.service';
+import { CreateCaseDto } from './dto/create-case.dto';
 import { SessionGuard } from '../auth/guards/session.guard';
 import { GuildGuard } from '../auth/guards/guild.guard';
 import { PermissionGuard } from '../auth/guards/permission.guard';
@@ -64,10 +65,11 @@ export class CasesController {
 
   @Post()
   @RequirePermission('INCIDENTS_CREATE')
+  @ApiBody({ type: CreateCaseDto })
   async create(
     @CurrentGuild() guildId: string,
     @CurrentUser() botUserId: string,
-    @Body() data: any,
+    @Body() data: CreateCaseDto,
   ) {
     return this.casesService.create(guildId, {
       ...data,

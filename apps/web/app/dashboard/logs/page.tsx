@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Search,
   Filter,
@@ -28,11 +29,12 @@ import {
   Calendar,
   MoreHorizontal,
   Loader2,
+  ClipboardList,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useSearchParams } from "next/navigation"
 import { Suspense } from "react"
-import { useGuildModerationActions } from "@/lib/hooks/use-api"
+import { useGuildModerationActions, useGuildPrismaAuditLogs } from "@/lib/hooks/use-api"
 
 const actionConfig = {
   ban: { icon: Ban, color: "text-red-500", bg: "bg-red-500/10" },
@@ -43,8 +45,9 @@ const actionConfig = {
 }
 
 type LogFilter = "all" | "ban" | "warn" | "mute" | "kick" | "delete"
+type ActionRowType = Exclude<LogFilter, "all">
 
-function mapApiActionToLogFilterType(action: Record<string, unknown>): LogFilter {
+function mapApiActionToLogFilterType(action: Record<string, unknown>): ActionRowType {
   const t = String(action.type || "").toUpperCase()
   if (t.includes("BAN")) return "ban"
   if (t.includes("KICK")) return "kick"
@@ -86,10 +89,15 @@ const Loading = () => (
 
 function LogsPageContent() {
   const [filterType, setFilterType] = useState<LogFilter>("all")
+  const [sourceTab, setSourceTab] = useState<"actions" | "audit">("actions")
   const searchParams = useSearchParams()
   void searchParams
 
   const { data: actions = [], isLoading } = useGuildModerationActions({ limit: 100, offset: 0 })
+  const { data: auditRows = [], isLoading: auditLoading } = useGuildPrismaAuditLogs(
+    { limit: 100, offset: 0 },
+    { enabled: sourceTab === "audit" },
+  )
 
   const logs = useMemo(
     () => (Array.isArray(actions) ? actions : []).map((a) => mapApiActionToLogRow(a as Record<string, unknown>)),
@@ -109,15 +117,11 @@ function LogsPageContent() {
     }
   }, [logs])
 
-  if (isLoading) {
-    return <Loading />
-  }
-
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          { label: "Total Logs", value: stats.total.toString(), change: "From API" },
+          { label: "Total Logs", value: stats.total.toString(), change: "Moderation actions" },
           { label: "Warnings", value: stats.warnings.toString(), change: "WARN / note" },
           { label: "Bans", value: stats.bans.toString(), change: "BAN" },
           { label: "Mutes", value: stats.mutes.toString(), change: "TIMEOUT" },
@@ -134,108 +138,179 @@ function LogsPageContent() {
 
       <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
         <CardHeader className="pb-4">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-                <ScrollText className="h-5 w-5 text-primary" />
+          <Tabs value={sourceTab} onValueChange={(v) => setSourceTab(v as "actions" | "audit")} className="w-full">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+                  <ScrollText className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-base font-semibold">Logs</CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    {sourceTab === "actions"
+                      ? `${filteredLogs.length} moderation entries`
+                      : `${auditRows.length} dashboard audit entries`}
+                  </p>
+                </div>
               </div>
-              <div>
-                <CardTitle className="text-base font-semibold">Moderation Logs</CardTitle>
-                <p className="text-xs text-muted-foreground">{filteredLogs.length} entries (guild actions)</p>
-              </div>
+              <TabsList className="h-9 w-full max-w-md sm:w-auto">
+                <TabsTrigger value="actions" className="text-xs sm:text-sm">
+                  Moderation
+                </TabsTrigger>
+                <TabsTrigger value="audit" className="gap-1 text-xs sm:text-sm">
+                  <ClipboardList className="h-3.5 w-3.5" />
+                  Audit trail
+                </TabsTrigger>
+              </TabsList>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative flex-1 sm:flex-none">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Search logs..."
-                  className="h-9 w-full border-border/50 bg-secondary/50 pl-9 sm:w-[200px]"
-                />
+
+            <TabsContent value="actions" className="mt-4 space-y-0 border-0 p-0">
+              <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+                <div className="relative flex-1 sm:flex-none">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Search logs..."
+                    className="h-9 w-full border-border/50 bg-secondary/50 pl-9 sm:w-[200px]"
+                  />
+                </div>
+                <Select value={filterType} onValueChange={(v) => setFilterType(v as LogFilter)}>
+                  <SelectTrigger className="h-9 w-[130px] border-border/50 bg-secondary/50">
+                    <Filter className="mr-2 h-4 w-4" />
+                    <SelectValue placeholder="Filter" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="ban">Bans</SelectItem>
+                    <SelectItem value="warn">Warnings</SelectItem>
+                    <SelectItem value="mute">Mutes</SelectItem>
+                    <SelectItem value="kick">Kicks</SelectItem>
+                    <SelectItem value="delete">Deletions</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" size="sm" className="h-9 gap-2 border-border/50 bg-transparent">
+                  <Calendar className="h-4 w-4" />
+                  <span className="hidden sm:inline">Date Range</span>
+                </Button>
+                <Button variant="outline" size="icon" className="h-9 w-9 border-border/50 bg-transparent">
+                  <Download className="h-4 w-4" />
+                </Button>
               </div>
-              <Select value={filterType} onValueChange={(v) => setFilterType(v as LogFilter)}>
-                <SelectTrigger className="h-9 w-[130px] border-border/50 bg-secondary/50">
-                  <Filter className="mr-2 h-4 w-4" />
-                  <SelectValue placeholder="Filter" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="ban">Bans</SelectItem>
-                  <SelectItem value="warn">Warnings</SelectItem>
-                  <SelectItem value="mute">Mutes</SelectItem>
-                  <SelectItem value="kick">Kicks</SelectItem>
-                  <SelectItem value="delete">Deletions</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button variant="outline" size="sm" className="h-9 gap-2 border-border/50 bg-transparent">
-                <Calendar className="h-4 w-4" />
-                <span className="hidden sm:inline">Date Range</span>
-              </Button>
-              <Button variant="outline" size="icon" className="h-9 w-9 border-border/50 bg-transparent">
-                <Download className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
+            </TabsContent>
+
+            <TabsContent value="audit" className="mt-4 border-0 p-0">
+              <p className="text-xs text-muted-foreground">
+                Config and moderation changes recorded in the dashboard database (not Discord&apos;s native audit log).
+              </p>
+            </TabsContent>
+          </Tabs>
         </CardHeader>
         <CardContent className="pt-0">
-          <div className="space-y-2">
-            {filteredLogs.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">No moderation actions for this guild yet.</p>
-            ) : (
-              filteredLogs.map((log) => {
-                const config = actionConfig[log.type]
-                const Icon = config.icon
-                return (
-                  <div
-                    key={log.id}
-                    className="group flex items-center gap-4 rounded-xl border border-border/50 bg-secondary/20 p-4 transition-all hover:bg-secondary/40"
-                  >
-                    <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg", config.bg)}>
-                      <Icon className={cn("h-5 w-5", config.color)} />
-                    </div>
-                    <div className="flex flex-1 items-center gap-4">
-                      <Avatar className="h-9 w-9">
-                        <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(log.user.name)}`} />
-                        <AvatarFallback className="text-xs">{log.user.avatar}</AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-foreground">{log.user.name}</span>
-                          <Badge variant="outline" className={cn("border-0 text-[10px] font-semibold uppercase", config.bg, config.color)}>
-                            {log.type}
-                          </Badge>
+          {sourceTab === "actions" ? (
+            <>
+              {isLoading ? (
+                <Loading />
+              ) : (
+                <>
+              <div className="space-y-2">
+                {filteredLogs.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">
+                    No moderation actions for this guild yet.
+                  </p>
+                ) : (
+                  filteredLogs.map((log) => {
+                    const config = actionConfig[log.type]
+                    const Icon = config.icon
+                    return (
+                      <div
+                        key={log.id}
+                        className="group flex items-center gap-4 rounded-xl border border-border/50 bg-secondary/20 p-4 transition-all hover:bg-secondary/40"
+                      >
+                        <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg", config.bg)}>
+                          <Icon className={cn("h-5 w-5", config.color)} />
                         </div>
-                        <p className="line-clamp-1 text-sm text-muted-foreground">{log.reason}</p>
+                        <div className="flex flex-1 items-center gap-4">
+                          <Avatar className="h-9 w-9">
+                            <AvatarImage
+                              src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(log.user.name)}`}
+                            />
+                            <AvatarFallback className="text-xs">{log.user.avatar}</AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-foreground">{log.user.name}</span>
+                              <Badge variant="outline" className={cn("border-0 text-[10px] font-semibold uppercase", config.bg, config.color)}>
+                                {log.type}
+                              </Badge>
+                            </div>
+                            <p className="line-clamp-1 text-sm text-muted-foreground">{log.reason}</p>
+                          </div>
+                        </div>
+                        <div className="hidden text-right sm:block">
+                          <p className="text-sm text-muted-foreground">by {log.moderator.name}</p>
+                          <p className="text-xs text-muted-foreground">{log.timestamp}</p>
+                        </div>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
                       </div>
-                    </div>
-                    <div className="hidden text-right sm:block">
-                      <p className="text-sm text-muted-foreground">by {log.moderator.name}</p>
-                      <p className="text-xs text-muted-foreground">{log.timestamp}</p>
-                    </div>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </div>
-                )
-              })
-            )}
-          </div>
+                    )
+                  })
+                )}
+              </div>
 
-          <div className="mt-6 flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
-              Showing {filteredLogs.length === 0 ? 0 : 1}-{filteredLogs.length} of {filteredLogs.length} entries
-            </p>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="icon" className="h-8 w-8 bg-transparent" disabled>
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button variant="outline" size="sm" className="h-8 w-8 bg-primary text-primary-foreground">
-                1
-              </Button>
-              <Button variant="outline" size="icon" className="h-8 w-8 bg-transparent" disabled>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
+              <div className="mt-6 flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Showing {filteredLogs.length === 0 ? 0 : 1}-{filteredLogs.length} of {filteredLogs.length} entries
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="icon" className="h-8 w-8 bg-transparent" disabled>
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-8 w-8 bg-primary text-primary-foreground">
+                    1
+                  </Button>
+                  <Button variant="outline" size="icon" className="h-8 w-8 bg-transparent" disabled>
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+                </>
+              )}
+            </>
+          ) : auditLoading ? (
+            <Loading />
+          ) : (
+            <div className="space-y-2">
+              {auditRows.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">No dashboard audit entries for this guild yet.</p>
+              ) : (
+                (Array.isArray(auditRows) ? auditRows : []).map((row: Record<string, unknown>) => {
+                  const actor = row.botUser as { username?: string } | undefined
+                  const when = row.createdAt ? new Date(row.createdAt as string).toLocaleString() : "—"
+                  return (
+                    <div
+                      key={String(row.id)}
+                      className="flex flex-col gap-1 rounded-xl border border-border/50 bg-secondary/20 p-4 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline" className="text-[10px] font-semibold uppercase">
+                            {String(row.action || "—")}
+                          </Badge>
+                          <span className="text-sm font-medium text-foreground">
+                            {String(row.entityType || "entity")}
+                            {row.entityId ? <span className="text-muted-foreground"> · {String(row.entityId)}</span> : null}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">by {actor?.username || "Staff"}</p>
+                      </div>
+                      <p className="shrink-0 text-xs text-muted-foreground sm:text-right">{when}</p>
+                    </div>
+                  )
+                })
+              )}
             </div>
-          </div>
+          )}
         </CardContent>
       </Card>
     </div>

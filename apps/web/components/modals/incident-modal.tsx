@@ -37,10 +37,16 @@ import {
   Image as ImageIcon,
   Link as LinkIcon,
   Hash,
+  Plus,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useUpdateIncident, useApproveIncident, useRejectIncident } from '@/lib/hooks/use-api'
+import { useUpdateIncident, useApproveIncident, useRejectIncident, useAuth } from '@/lib/hooks/use-api'
 import { toast } from 'sonner'
+import {
+  incidentDisplayDescription,
+  incidentDisplayTitle,
+  incidentEvidenceText,
+} from '@/lib/incident-display'
 
 interface IncidentModalProps {
   incident: any
@@ -57,21 +63,23 @@ const severityConfig = {
   CRITICAL: { color: "text-red-500", bg: "bg-red-500/10", label: "Critical" },
 }
 
-const statusConfig = {
+const statusConfig: Record<string, { color: string; bg: string; label: string }> = {
   PENDING: { color: "text-amber-500", bg: "bg-amber-500/10", label: "Pending" },
-  OPEN: { color: "text-red-500", bg: "bg-red-500/10", label: "Open" },
-  IN_PROGRESS: { color: "text-blue-500", bg: "bg-blue-500/10", label: "In Progress" },
+  REVIEWING: { color: "text-blue-500", bg: "bg-blue-500/10", label: "Reviewing" },
+  APPROVED: { color: "text-emerald-500", bg: "bg-emerald-500/10", label: "Approved" },
+  REJECTED: { color: "text-destructive", bg: "bg-destructive/10", label: "Rejected" },
   RESOLVED: { color: "text-emerald-500", bg: "bg-emerald-500/10", label: "Resolved" },
-  CLOSED: { color: "text-muted-foreground", bg: "bg-muted", label: "Closed" },
 }
 
-const typeConfig = {
-  SPAM: { icon: MessageSquare, color: "text-blue-500", label: "Spam" },
-  HARASSMENT: { icon: AlertTriangle, color: "text-red-500", label: "Harassment" },
-  NSFW: { icon: Eye, color: "text-purple-500", label: "NSFW" },
-  RAID: { icon: Shield, color: "text-orange-500", label: "Raid" },
-  SCAM: { icon: Ban, color: "text-amber-500", label: "Scam" },
-  OTHER: { icon: Flag, color: "text-muted-foreground", label: "Other" },
+const typeConfig: Record<string, { icon: typeof MessageSquare; color: string; label: string }> = {
+  MESSAGE_SPAM: { icon: MessageSquare, color: "text-blue-500", label: "Message spam" },
+  JOIN_SPAM: { icon: MessageSquare, color: "text-blue-500", label: "Join spam" },
+  MENTION_SPAM: { icon: MessageSquare, color: "text-blue-500", label: "Mention spam" },
+  SUSPICIOUS_LINK: { icon: AlertTriangle, color: "text-amber-500", label: "Suspicious link" },
+  NEW_ACCOUNT: { icon: User, color: "text-muted-foreground", label: "New account" },
+  TOXIC_CONTENT: { icon: AlertTriangle, color: "text-red-500", label: "Toxic content" },
+  RAID_DETECTED: { icon: Shield, color: "text-orange-500", label: "Raid detected" },
+  CUSTOM_RULE: { icon: Flag, color: "text-muted-foreground", label: "Custom rule" },
 }
 
 export function IncidentModal({ incident, isOpen, onClose, onUpdate, mode = 'view' }: IncidentModalProps) {
@@ -89,59 +97,81 @@ export function IncidentModal({ incident, isOpen, onClose, onUpdate, mode = 'vie
   const updateIncidentMutation = useUpdateIncident()
   const approveIncidentMutation = useApproveIncident()
   const rejectIncidentMutation = useRejectIncident()
+  const { data: authUser } = useAuth()
 
   useEffect(() => {
     if (incident) {
+      const inc = incident as Record<string, unknown>
       setFormData({
-        title: incident.title || '',
-        description: incident.description || '',
-        type: incident.type || '',
-        severity: incident.severity || '',
-        status: incident.status || '',
-        evidence: incident.evidence || '',
-        notes: incident.notes || '',
+        title: incidentDisplayTitle(inc),
+        description: incidentDisplayDescription(inc),
+        type: String(inc.type || ''),
+        severity: String(inc.severity || ''),
+        status: String(inc.status || ''),
+        evidence: incidentEvidenceText(inc),
+        notes: String(inc.moderatorNotes || ''),
       })
     }
   }, [incident])
 
   const handleSave = async () => {
+    if (!incident?.id) return
     try {
       await updateIncidentMutation.mutateAsync({
-        id: incident.id,
-        data: formData
+        incidentId: incident.id,
+        data: { moderatorNotes: formData.notes || undefined },
       })
       toast.success('Incident updated successfully')
       onUpdate?.()
       onClose()
-    } catch (error) {
+    } catch {
       toast.error('Failed to update incident')
     }
   }
 
+  const moderatorId = (authUser as { id?: string } | null | undefined)?.id
+
   const handleApprove = async () => {
+    if (!incident?.id) return
+    if (!moderatorId) {
+      toast.error('You must be signed in to approve incidents')
+      return
+    }
     try {
-      await approveIncidentMutation.mutateAsync(incident.id)
+      await approveIncidentMutation.mutateAsync({
+        incidentId: incident.id,
+        data: { moderatorId, notes: formData.notes || undefined },
+      })
       toast.success('Incident approved')
       onUpdate?.()
       onClose()
-    } catch (error) {
+    } catch {
       toast.error('Failed to approve incident')
     }
   }
 
   const handleReject = async () => {
+    if (!incident?.id) return
+    if (!moderatorId) {
+      toast.error('You must be signed in to reject incidents')
+      return
+    }
     try {
-      await rejectIncidentMutation.mutateAsync(incident.id)
+      await rejectIncidentMutation.mutateAsync({
+        incidentId: incident.id,
+        data: { moderatorId, notes: formData.notes || undefined },
+      })
       toast.success('Incident rejected')
       onUpdate?.()
       onClose()
-    } catch (error) {
+    } catch {
       toast.error('Failed to reject incident')
     }
   }
 
   if (!incident) return null
 
+  const incRecord = incident as Record<string, unknown>
   const severity = severityConfig[incident.severity as keyof typeof severityConfig]
   const status = statusConfig[incident.status as keyof typeof statusConfig]
   const type = typeConfig[incident.type as keyof typeof typeConfig]
@@ -157,7 +187,7 @@ export function IncidentModal({ incident, isOpen, onClose, onUpdate, mode = 'vie
                 <TypeIcon className={cn("h-5 w-5", type?.color)} />
               </div>
               <div>
-                <DialogTitle className="text-xl">{incident.title}</DialogTitle>
+                <DialogTitle className="text-xl">{incidentDisplayTitle(incRecord)}</DialogTitle>
                 <div className="flex items-center gap-2 mt-1">
                   <Badge variant="outline" className={cn("border-0 text-xs", severity?.bg, severity?.color)}>
                     {severity?.label}
@@ -179,7 +209,7 @@ export function IncidentModal({ incident, isOpen, onClose, onUpdate, mode = 'vie
                     <Edit className="w-4 h-4 mr-2" />
                     Edit
                   </Button>
-                  {incident.status === 'PENDING' && (
+                  {(incident.status === 'PENDING' || incident.status === 'REVIEWING') && (
                     <>
                       <Button 
                         variant="outline" 
@@ -254,18 +284,24 @@ export function IncidentModal({ incident, isOpen, onClose, onUpdate, mode = 'vie
                 </h3>
                 <div className="flex items-center gap-4 p-4 rounded-lg border bg-secondary/20">
                   <Avatar className="h-12 w-12">
-                    <AvatarImage src={incident.targetUser?.avatar} />
+                    <AvatarImage
+                      src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(
+                        String((incident.user as { discordId?: string })?.discordId || incident.id),
+                      )}`}
+                    />
                     <AvatarFallback>
-                      {incident.targetUser?.username?.charAt(0)?.toUpperCase() || 'U'}
+                      {((incident.user as { username?: string })?.username || '?').charAt(0).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1">
-                    <div className="font-medium">{incident.targetUser?.username || 'Unknown User'}</div>
+                    <div className="font-medium">
+                      {(incident.user as { username?: string })?.username || 'Unknown user'}
+                    </div>
                     <div className="text-sm text-muted-foreground">
-                      ID: {incident.targetUserId}
+                      Discord ID: {(incident.user as { discordId?: string })?.discordId || '—'}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      Joined: {incident.targetUser?.joinedAt ? new Date(incident.targetUser.joinedAt).toLocaleDateString() : 'Unknown'}
+                      Internal user id: {String(incident.userId || '—')}
                     </div>
                   </div>
                   <Button variant="outline" size="sm">
@@ -368,15 +404,15 @@ export function IncidentModal({ incident, isOpen, onClose, onUpdate, mode = 'vie
                   <div className="space-y-4">
                     <div>
                       <Label className="text-xs text-muted-foreground">Description</Label>
-                      <p className="mt-1">{incident.description}</p>
+                      <p className="mt-1">{incidentDisplayDescription(incRecord)}</p>
                     </div>
                     
                     <div className="grid grid-cols-2 gap-6">
                       <div>
-                        <Label className="text-xs text-muted-foreground">Reported By</Label>
+                        <Label className="text-xs text-muted-foreground">Source</Label>
                         <div className="flex items-center gap-2 mt-1">
                           <User className="w-4 h-4 text-muted-foreground" />
-                          <span>{incident.reportedBy?.username || 'System'}</span>
+                          <span>AutoMod / {String(incident.ruleTriggered || 'rule')}</span>
                         </div>
                       </div>
                       
@@ -384,7 +420,9 @@ export function IncidentModal({ incident, isOpen, onClose, onUpdate, mode = 'vie
                         <Label className="text-xs text-muted-foreground">Created</Label>
                         <div className="flex items-center gap-2 mt-1">
                           <Calendar className="w-4 h-4 text-muted-foreground" />
-                          <span>{new Date(incident.createdAt).toLocaleString()}</span>
+                          <span>
+                            {incident.createdAt ? new Date(incident.createdAt as string).toLocaleString() : '—'}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -412,9 +450,9 @@ export function IncidentModal({ incident, isOpen, onClose, onUpdate, mode = 'vie
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {incident.evidence ? (
+                    {incidentEvidenceText(incRecord) ? (
                       <div className="p-4 rounded-lg border bg-secondary/20">
-                        <pre className="whitespace-pre-wrap text-sm">{incident.evidence}</pre>
+                        <pre className="whitespace-pre-wrap text-sm">{incidentEvidenceText(incRecord)}</pre>
                       </div>
                     ) : (
                       <div className="text-center py-8 text-muted-foreground">
@@ -453,8 +491,24 @@ export function IncidentModal({ incident, isOpen, onClose, onUpdate, mode = 'vie
                 
                 <div className="space-y-3">
                   {[
-                    { time: incident.createdAt, action: 'Incident reported', user: incident.reportedBy?.username || 'System', type: 'create' },
-                    { time: incident.updatedAt, action: 'Status updated', user: 'Moderator', type: 'update' },
+                    {
+                      time: incident.createdAt,
+                      action: 'Incident opened',
+                      user: 'System',
+                      type: 'create' as const,
+                    },
+                    ...(incident.updatedAt &&
+                    incident.createdAt &&
+                    String(incident.updatedAt) !== String(incident.createdAt)
+                      ? [
+                          {
+                            time: incident.updatedAt,
+                            action: 'Last updated',
+                            user: 'Staff',
+                            type: 'update' as const,
+                          },
+                        ]
+                      : []),
                   ].map((event, index) => (
                     <div key={index} className="flex items-start gap-3 p-3 rounded-lg border bg-secondary/20">
                       <div className={cn(

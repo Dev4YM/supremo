@@ -49,13 +49,32 @@ import {
   AlertTriangle,
   CheckCircle2,
   Info,
+  Zap,
+  Copy,
+  RotateCcw,
+  X,
+  Lock as LockIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/lib/hooks/use-api"
 import { toast } from "sonner"
 
+type ProfileViewUser = {
+  id?: string
+  username?: string
+  avatar?: string
+  displayName?: string
+  bio?: string
+  location?: string
+  website?: string
+  twitter?: string
+  github?: string
+  createdAt?: string
+}
+
 export default function ProfilePage() {
-  const { data: user } = useAuth()
+  const { data: authUser } = useAuth()
+  const user = authUser as ProfileViewUser | undefined
   const [activeTab, setActiveTab] = useState('profile')
   const [editMode, setEditMode] = useState(false)
   const [showToken, setShowToken] = useState(false)
@@ -589,7 +608,7 @@ export default function ProfilePage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
-                <Lock className="w-5 h-5" />
+                <LockIcon className="w-5 h-5" />
                 Account Security
               </CardTitle>
             </CardHeader>

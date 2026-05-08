@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -21,9 +21,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { 
-  Search, 
-  Filter, 
+import {
+  Search,
+  Filter,
   AlertTriangle,
   MoreHorizontal,
   Eye,
@@ -39,74 +39,20 @@ import {
 import { cn } from "@/lib/utils"
 import { useSearchParams } from "next/navigation"
 import { Suspense } from "react"
-import { useIncidents, useUpdateIncident, useApproveIncident, useRejectIncident } from "@/lib/hooks/use-api"
+import {
+  useIncidents,
+  useUpdateIncident,
+  useApproveIncident,
+  useRejectIncident,
+  useAuth,
+} from "@/lib/hooks/use-api"
 import { toast } from "sonner"
 import Link from "next/link"
 import { IncidentModal } from "@/components/modals/incident-modal"
-
-// Mock incident data
-const mockIncidents = [
-  { 
-    id: "1", 
-    title: "Spam in #general", 
-    description: "User posting repeated promotional content",
-    type: "spam", 
-    severity: "medium", 
-    status: "open", 
-    reporter: "ModHelper", 
-    reportedUser: "SpamBot123",
-    createdAt: "2 hours ago",
-    avatar: "S"
-  },
-  { 
-    id: "2", 
-    title: "Harassment Report", 
-    description: "Targeted harassment towards multiple members",
-    type: "harassment", 
-    severity: "high", 
-    status: "in_progress", 
-    reporter: "SafetyFirst", 
-    reportedUser: "ToxicUser99",
-    createdAt: "4 hours ago",
-    avatar: "H"
-  },
-  { 
-    id: "3", 
-    title: "NSFW Content Shared", 
-    description: "Inappropriate images shared in public channel",
-    type: "nsfw", 
-    severity: "high", 
-    status: "resolved", 
-    reporter: "QuickMod", 
-    reportedUser: "BadActor456",
-    createdAt: "1 day ago",
-    avatar: "N"
-  },
-  { 
-    id: "4", 
-    title: "Raid Attempt", 
-    description: "Coordinated spam attack by multiple new accounts",
-    type: "raid", 
-    severity: "critical", 
-    status: "resolved", 
-    reporter: "AlertMod", 
-    reportedUser: "Multiple Users",
-    createdAt: "2 days ago",
-    avatar: "R"
-  },
-  { 
-    id: "5", 
-    title: "Scam Link Detected", 
-    description: "Phishing link disguised as Discord Nitro giveaway",
-    type: "scam", 
-    severity: "medium", 
-    status: "closed", 
-    reporter: "ScamHunter", 
-    reportedUser: "FakeGiveaway",
-    createdAt: "3 days ago",
-    avatar: "S"
-  },
-]
+import {
+  incidentDisplayDescription,
+  incidentDisplayTitle,
+} from "@/lib/incident-display"
 
 const severityConfig = {
   low: { color: "text-blue-500", bg: "bg-blue-500/10", label: "Low" },
@@ -115,96 +61,144 @@ const severityConfig = {
   critical: { color: "text-red-500", bg: "bg-red-500/10", label: "Critical" },
 }
 
-const statusConfig = {
-  open: { color: "text-red-500", bg: "bg-red-500/10", label: "Open" },
-  in_progress: { color: "text-amber-500", bg: "bg-amber-500/10", label: "In Progress" },
+const statusConfig: Record<
+  string,
+  { color: string; bg: string; label: string }
+> = {
+  pending: { color: "text-amber-500", bg: "bg-amber-500/10", label: "Pending" },
+  reviewing: { color: "text-blue-500", bg: "bg-blue-500/10", label: "Reviewing" },
+  approved: { color: "text-emerald-500", bg: "bg-emerald-500/10", label: "Approved" },
+  rejected: { color: "text-destructive", bg: "bg-destructive/10", label: "Rejected" },
   resolved: { color: "text-emerald-500", bg: "bg-emerald-500/10", label: "Resolved" },
-  closed: { color: "text-muted-foreground", bg: "bg-muted", label: "Closed" },
 }
 
-const typeConfig = {
-  spam: { icon: MessageSquare, color: "text-blue-500" },
-  harassment: { icon: AlertTriangle, color: "text-red-500" },
-  nsfw: { icon: Eye, color: "text-purple-500" },
-  raid: { icon: Shield, color: "text-orange-500" },
-  scam: { icon: Ban, color: "text-amber-500" },
-  other: { icon: AlertTriangle, color: "text-muted-foreground" },
+const typeConfig: Record<string, { icon: typeof MessageSquare; color: string }> = {
+  message_spam: { icon: MessageSquare, color: "text-blue-500" },
+  join_spam: { icon: MessageSquare, color: "text-blue-500" },
+  mention_spam: { icon: MessageSquare, color: "text-blue-500" },
+  suspicious_link: { icon: AlertTriangle, color: "text-amber-500" },
+  new_account: { icon: User, color: "text-muted-foreground" },
+  toxic_content: { icon: AlertTriangle, color: "text-red-500" },
+  raid_detected: { icon: Shield, color: "text-orange-500" },
+  custom_rule: { icon: AlertTriangle, color: "text-muted-foreground" },
 }
 
-const Loading = () => null;
+const Loading = () => null
 
 export default function IncidentsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [typeFilter, setTypeFilter] = useState("all")
-  const [selectedIncident, setSelectedIncident] = useState<any>(null)
+  const [selectedIncident, setSelectedIncident] = useState<Record<string, unknown> | null>(null)
   const [showIncidentModal, setShowIncidentModal] = useState(false)
   const searchParams = useSearchParams()
+  void searchParams
 
-  // Fetch incidents from backend
-  const { data: incidents = [], isLoading, error, refetch } = useIncidents();
-  const updateIncidentMutation = useUpdateIncident();
-  const approveIncidentMutation = useApproveIncident();
-  const rejectIncidentMutation = useRejectIncident();
+  const { data: authUser } = useAuth()
 
-  const filteredIncidents = incidents.filter((incident: any) => {
-    const matchesSearch = incident.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         incident.description?.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesStatus = statusFilter === "all" || incident.status === statusFilter
-    const matchesType = typeFilter === "all" || incident.type === typeFilter
-    return matchesSearch && matchesStatus && matchesType
-  })
+  const incidentQueryParams = useMemo(() => {
+    const base: { limit: number; status?: string } = { limit: 100 }
+    if (statusFilter !== "all") base.status = statusFilter
+    return base
+  }, [statusFilter])
 
-  // Calculate stats from real data
-  const stats = {
-    total: incidents.length,
-    open: incidents.filter((i: any) => i.status === 'PENDING' || i.status === 'OPEN').length,
-    resolved: incidents.filter((i: any) => i.status === 'RESOLVED').length,
-    critical: incidents.filter((i: any) => i.severity === 'CRITICAL').length,
-  }
+  const { data: incidents = [], isLoading, error, refetch } = useIncidents(incidentQueryParams)
+  const updateIncidentMutation = useUpdateIncident()
+  const approveIncidentMutation = useApproveIncident()
+  const rejectIncidentMutation = useRejectIncident()
+
+  const filteredIncidents = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    return (Array.isArray(incidents) ? incidents : []).filter((incident: Record<string, unknown>) => {
+      const title = incidentDisplayTitle(incident).toLowerCase()
+      const desc = incidentDisplayDescription(incident).toLowerCase()
+      const rule = String(incident.ruleTriggered || "").toLowerCase()
+      const id = String(incident.id || "").toLowerCase()
+      const typ = String(incident.type || "").toLowerCase()
+      const matchesSearch =
+        !q ||
+        title.includes(q) ||
+        desc.includes(q) ||
+        rule.includes(q) ||
+        typ.includes(q) ||
+        id.includes(q)
+      const matchesType = typeFilter === "all" || String(incident.type) === typeFilter
+      return matchesSearch && matchesType
+    })
+  }, [incidents, searchQuery, typeFilter])
+
+  const stats = useMemo(() => {
+    const list = Array.isArray(incidents) ? incidents : []
+    return {
+      total: list.length,
+      open: list.filter(
+        (i: Record<string, unknown>) => i.status === "PENDING" || i.status === "REVIEWING",
+      ).length,
+      resolved: list.filter(
+        (i: Record<string, unknown>) =>
+          i.status === "RESOLVED" || i.status === "APPROVED" || i.status === "REJECTED",
+      ).length,
+      critical: list.filter((i: Record<string, unknown>) => i.severity === "CRITICAL").length,
+    }
+  }, [incidents])
+
+  const moderatorId = (authUser as { id?: string } | null | undefined)?.id
 
   const handleResolveIncident = async (incidentId: string) => {
     try {
       await updateIncidentMutation.mutateAsync({
-        id: incidentId,
-        data: { status: 'RESOLVED' }
-      });
-      toast.success('Incident resolved successfully');
-      refetch();
-    } catch (error) {
-      toast.error('Failed to resolve incident');
+        incidentId,
+        data: { status: "resolved" },
+      })
+      toast.success("Incident resolved successfully")
+      refetch()
+    } catch {
+      toast.error("Failed to resolve incident")
     }
   }
 
   const handleApproveIncident = async (incidentId: string) => {
+    if (!moderatorId) {
+      toast.error("You must be signed in to approve incidents")
+      return
+    }
     try {
-      await approveIncidentMutation.mutateAsync(incidentId);
-      toast.success('Incident approved successfully');
-      refetch();
-    } catch (error) {
-      toast.error('Failed to approve incident');
+      await approveIncidentMutation.mutateAsync({
+        incidentId,
+        data: { moderatorId, notes: "" },
+      })
+      toast.success("Incident approved successfully")
+      refetch()
+    } catch {
+      toast.error("Failed to approve incident")
     }
   }
 
   const handleRejectIncident = async (incidentId: string) => {
+    if (!moderatorId) {
+      toast.error("You must be signed in to reject incidents")
+      return
+    }
     try {
-      await rejectIncidentMutation.mutateAsync(incidentId);
-      toast.success('Incident rejected successfully');
-      refetch();
-    } catch (error) {
-      toast.error('Failed to reject incident');
+      await rejectIncidentMutation.mutateAsync({
+        incidentId,
+        data: { moderatorId, notes: "" },
+      })
+      toast.success("Incident rejected successfully")
+      refetch()
+    } catch {
+      toast.error("Failed to reject incident")
     }
   }
 
   return (
     <Suspense fallback={<Loading />}>
       <div className="space-y-6">
-        {/* Stats */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
             { label: "Total Incidents", value: stats.total.toString(), icon: AlertTriangle, color: "text-red-500" },
-            { label: "Open Cases", value: stats.open.toString(), icon: Clock, color: "text-amber-500" },
-            { label: "Resolved", value: stats.resolved.toString(), icon: CheckCircle2, color: "text-emerald-500" },
+            { label: "Awaiting review", value: stats.open.toString(), icon: Clock, color: "text-amber-500" },
+            { label: "Closed out", value: stats.resolved.toString(), icon: CheckCircle2, color: "text-emerald-500" },
             { label: "Critical", value: stats.critical.toString(), icon: Shield, color: "text-red-500" },
           ].map((stat) => (
             <Card key={stat.label} className="border-border/50 bg-card/50">
@@ -223,7 +217,6 @@ export default function IncidentsPage() {
           ))}
         </div>
 
-        {/* Incidents List */}
         <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
           <CardHeader className="pb-4">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -233,9 +226,7 @@ export default function IncidentsPage() {
                 </div>
                 <div>
                   <CardTitle className="text-base font-semibold">Incident Reports</CardTitle>
-                  <p className="text-xs text-muted-foreground">
-                    {filteredIncidents.length} incidents found
-                  </p>
+                  <p className="text-xs text-muted-foreground">{filteredIncidents.length} incidents found</p>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -249,38 +240,40 @@ export default function IncidentsPage() {
                   />
                 </div>
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="h-9 w-[130px] border-border/50 bg-secondary/50">
+                  <SelectTrigger className="h-9 w-[150px] border-border/50 bg-secondary/50">
                     <Filter className="mr-2 h-4 w-4" />
                     <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Status</SelectItem>
                     <SelectItem value="PENDING">Pending</SelectItem>
-                    <SelectItem value="OPEN">Open</SelectItem>
-                    <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
+                    <SelectItem value="REVIEWING">Reviewing</SelectItem>
+                    <SelectItem value="APPROVED">Approved</SelectItem>
+                    <SelectItem value="REJECTED">Rejected</SelectItem>
                     <SelectItem value="RESOLVED">Resolved</SelectItem>
-                    <SelectItem value="CLOSED">Closed</SelectItem>
                   </SelectContent>
                 </Select>
                 <Select value={typeFilter} onValueChange={setTypeFilter}>
-                  <SelectTrigger className="h-9 w-[130px] border-border/50 bg-secondary/50">
+                  <SelectTrigger className="h-9 w-[170px] border-border/50 bg-secondary/50">
                     <Filter className="mr-2 h-4 w-4" />
                     <SelectValue placeholder="Type" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Types</SelectItem>
-                    <SelectItem value="SPAM">Spam</SelectItem>
-                    <SelectItem value="HARASSMENT">Harassment</SelectItem>
-                    <SelectItem value="NSFW">NSFW</SelectItem>
-                    <SelectItem value="RAID">Raid</SelectItem>
-                    <SelectItem value="SCAM">Scam</SelectItem>
-                    <SelectItem value="OTHER">Other</SelectItem>
+                    <SelectItem value="MESSAGE_SPAM">Message spam</SelectItem>
+                    <SelectItem value="JOIN_SPAM">Join spam</SelectItem>
+                    <SelectItem value="MENTION_SPAM">Mention spam</SelectItem>
+                    <SelectItem value="SUSPICIOUS_LINK">Suspicious link</SelectItem>
+                    <SelectItem value="NEW_ACCOUNT">New account</SelectItem>
+                    <SelectItem value="TOXIC_CONTENT">Toxic content</SelectItem>
+                    <SelectItem value="RAID_DETECTED">Raid detected</SelectItem>
+                    <SelectItem value="CUSTOM_RULE">Custom rule</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button 
-                  size="sm" 
-                  variant="outline" 
-                  onClick={() => refetch()} 
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => refetch()}
                   disabled={isLoading}
                   className="h-9 gap-2"
                 >
@@ -320,150 +313,154 @@ export default function IncidentsPage() {
                 ))}
               </div>
             ) : error ? (
-              <div className="text-center py-8">
-                <AlertTriangle className="h-12 w-12 text-destructive mx-auto mb-4" />
-                <h3 className="text-lg font-semibold mb-2">Failed to load incidents</h3>
-                <p className="text-muted-foreground mb-4">
-                  There was an error loading incidents. Please try again.
-                </p>
+              <div className="py-8 text-center">
+                <AlertTriangle className="mx-auto mb-4 h-12 w-12 text-destructive" />
+                <h3 className="mb-2 text-lg font-semibold">Failed to load incidents</h3>
+                <p className="mb-4 text-muted-foreground">There was an error loading incidents. Please try again.</p>
                 <Button onClick={() => refetch()} className="gap-2">
                   <RefreshCw className="h-4 w-4" />
                   Retry
                 </Button>
               </div>
             ) : (
-            <div className="space-y-2">
-              {filteredIncidents.map((incident: any) => {
-                const severity = severityConfig[incident.severity?.toLowerCase() as keyof typeof severityConfig] || severityConfig.medium
-                const status = statusConfig[incident.status?.toLowerCase() as keyof typeof statusConfig] || statusConfig.open
-                const type = typeConfig[incident.type?.toLowerCase() as keyof typeof typeConfig] || typeConfig.other
-                const TypeIcon = type.icon
-                
-                return (
-                  <div
-                    key={incident.id}
-                    className={cn(
-                      "group flex items-center gap-4 rounded-xl border p-4 transition-all hover:shadow-lg",
-                      incident.severity === "critical" ? "border-red-500/30 bg-red-500/5" :
-                      incident.severity === "high" ? "border-orange-500/30 bg-orange-500/5" :
-                      "border-border/50 bg-secondary/20 hover:bg-secondary/40"
-                    )}
-                  >
-                    <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg", severity.bg)}>
-                      <TypeIcon className={cn("h-5 w-5", type.color)} />
-                    </div>
-                    
-                    <div className="flex flex-1 items-center gap-4">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-foreground">{incident.title}</span>
-                          <Badge variant="outline" className={cn("border-0 text-[10px] font-semibold", severity.bg, severity.color)}>
-                            {severity.label}
-                          </Badge>
-                          <Badge variant="outline" className={cn("border-0 text-[10px]", status.bg, status.color)}>
-                            {status.label}
-                          </Badge>
-                        </div>
-                        <p className="line-clamp-1 text-sm text-muted-foreground">{incident.description}</p>
-                        <div className="mt-1 flex items-center gap-4 text-xs text-muted-foreground">
-                          <span>Reported by {incident.reportedBy?.username || 'System'}</span>
-                          <span>•</span>
-                          <span>Target: {incident.targetUser?.username || incident.targetUserId || 'Unknown'}</span>
-                          <span>•</span>
-                          <span>{incident.createdAt ? new Date(incident.createdAt).toLocaleDateString() : 'Unknown'}</span>
+              <div className="space-y-2">
+                {filteredIncidents.map((incident: Record<string, unknown>) => {
+                  const sevKey = String(incident.severity || "MEDIUM").toLowerCase() as keyof typeof severityConfig
+                  const severity = severityConfig[sevKey] || severityConfig.medium
+                  const stKey = String(incident.status || "PENDING").toLowerCase()
+                  const status = statusConfig[stKey] || statusConfig.pending
+                  const typKey = String(incident.type || "custom_rule").toLowerCase()
+                  const type = typeConfig[typKey] || typeConfig.custom_rule
+                  const TypeIcon = type.icon
+                  const user = incident.user as { username?: string; discordId?: string } | undefined
+                  const seed = user?.discordId || user?.username || incident.id
+
+                  return (
+                    <div
+                      key={String(incident.id)}
+                      className={cn(
+                        "group flex items-center gap-4 rounded-xl border p-4 transition-all hover:shadow-lg",
+                        incident.severity === "CRITICAL"
+                          ? "border-red-500/30 bg-red-500/5"
+                          : incident.severity === "HIGH"
+                            ? "border-orange-500/30 bg-orange-500/5"
+                            : "border-border/50 bg-secondary/20 hover:bg-secondary/40",
+                      )}
+                    >
+                      <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg", severity.bg)}>
+                        <TypeIcon className={cn("h-5 w-5", type.color)} />
+                      </div>
+
+                      <div className="flex flex-1 items-center gap-4">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-semibold text-foreground">{incidentDisplayTitle(incident)}</span>
+                            <Badge variant="outline" className={cn("border-0 text-[10px] font-semibold", severity.bg, severity.color)}>
+                              {severity.label}
+                            </Badge>
+                            <Badge variant="outline" className={cn("border-0 text-[10px]", status.bg, status.color)}>
+                              {status.label}
+                            </Badge>
+                          </div>
+                          <p className="line-clamp-1 text-sm text-muted-foreground">{incidentDisplayDescription(incident)}</p>
+                          <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                            <span>Source: AutoMod</span>
+                            <span>•</span>
+                            <span>User: {user?.username || "Unknown"}</span>
+                            <span>•</span>
+                            <span>
+                              {incident.createdAt ? new Date(incident.createdAt as string).toLocaleString() : "Unknown"}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="flex items-center gap-2">
-                      <Avatar className="h-8 w-8">
-                        <AvatarImage src={incident.targetUser?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${incident.targetUserId}`} />
-                        <AvatarFallback className="text-xs">
-                          {incident.targetUser?.username?.charAt(0)?.toUpperCase() || 'U'}
-                        </AvatarFallback>
-                      </Avatar>
-                      
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-40">
-                          <DropdownMenuItem 
-                            className="gap-2"
-                            onClick={() => {
-                              setSelectedIncident(incident)
-                              setShowIncidentModal(true)
-                            }}
-                          >
-                            <Eye className="h-4 w-4" />
-                            View Details
-                          </DropdownMenuItem>
-                          <DropdownMenuItem className="gap-2">
-                            <User className="h-4 w-4" />
-                            View User
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          {(incident.status === "PENDING" || incident.status === "OPEN") && (
-                            <>
-                              <DropdownMenuItem 
-                                className="gap-2"
-                                onClick={() => handleResolveIncident(incident.id)}
-                                disabled={updateIncidentMutation.isPending}
+                      <div className="flex items-center gap-2">
+                        <Avatar className="h-8 w-8">
+                          <AvatarImage
+                            src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(String(seed))}`}
+                          />
+                          <AvatarFallback className="text-xs">{(user?.username || "?").slice(0, 1).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-48">
+                            <DropdownMenuItem
+                              className="gap-2"
+                              onClick={() => {
+                                setSelectedIncident(incident)
+                                setShowIncidentModal(true)
+                              }}
+                            >
+                              <Eye className="h-4 w-4" />
+                              View Details
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            {(incident.status === "PENDING" || incident.status === "REVIEWING") && (
+                              <>
+                                <DropdownMenuItem
+                                  className="gap-2"
+                                  onClick={() => handleResolveIncident(String(incident.id))}
+                                  disabled={updateIncidentMutation.isPending}
+                                >
+                                  <CheckCircle2 className="h-4 w-4" />
+                                  Mark Resolved
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="gap-2 text-emerald-600"
+                                  onClick={() => handleApproveIncident(String(incident.id))}
+                                  disabled={approveIncidentMutation.isPending}
+                                >
+                                  <CheckCircle2 className="h-4 w-4" />
+                                  Approve
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                            {(incident.status === "PENDING" || incident.status === "REVIEWING") && (
+                              <DropdownMenuItem
+                                className="gap-2 text-destructive focus:text-destructive"
+                                onClick={() => handleRejectIncident(String(incident.id))}
+                                disabled={rejectIncidentMutation.isPending}
                               >
-                                <CheckCircle2 className="h-4 w-4" />
-                                Mark Resolved
+                                <Ban className="h-4 w-4" />
+                                Reject
                               </DropdownMenuItem>
-                              <DropdownMenuItem 
-                                className="gap-2 text-emerald-600"
-                                onClick={() => handleApproveIncident(incident.id)}
-                                disabled={approveIncidentMutation.isPending}
-                              >
-                                <CheckCircle2 className="h-4 w-4" />
-                                Approve
-                              </DropdownMenuItem>
-                            </>
-                          )}
-                          <DropdownMenuItem 
-                            className="gap-2 text-destructive focus:text-destructive"
-                            onClick={() => handleRejectIncident(incident.id)}
-                            disabled={rejectIncidentMutation.isPending}
-                          >
-                            <Ban className="h-4 w-4" />
-                            Reject
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
+                  )
+                })}
+
+                {filteredIncidents.length === 0 && (
+                  <div className="py-8 text-center">
+                    <AlertTriangle className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
+                    <h3 className="mb-2 text-lg font-semibold">No incidents found</h3>
+                    <p className="mb-4 text-muted-foreground">
+                      {searchQuery || statusFilter !== "all" || typeFilter !== "all"
+                        ? "No incidents match your current filters."
+                        : "No incidents have been reported yet."}
+                    </p>
+                    <Link href="/dashboard/incidents/new">
+                      <Button className="gap-2">
+                        <Plus className="h-4 w-4" />
+                        Report Incident
+                      </Button>
+                    </Link>
                   </div>
-                )
-              })}
-
-              {filteredIncidents.length === 0 && (
-                <div className="text-center py-8">
-                  <AlertTriangle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">No incidents found</h3>
-                  <p className="text-muted-foreground mb-4">
-                    {searchQuery || statusFilter !== "all" || typeFilter !== "all"
-                      ? "No incidents match your current filters."
-                      : "No incidents have been reported yet."}
-                  </p>
-                  <Link href="/dashboard/incidents/new">
-                    <Button className="gap-2">
-                      <Plus className="h-4 w-4" />
-                      Report Incident
-                    </Button>
-                  </Link>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Incident Modal */}
       <IncidentModal
         incident={selectedIncident}
         isOpen={showIncidentModal}

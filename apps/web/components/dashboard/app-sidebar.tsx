@@ -97,7 +97,7 @@ export function AppSidebar() {
     return selectedGuildId;
   });
 
-  const selectedGuild = guilds?.find(guild => guild.id === selectedGuildId) || guilds?.[0];
+  const selectedGuild = guilds?.find((guild: { id: string }) => guild.id === selectedGuildId) || guilds?.[0];
 
   const handleGuildChange = (guildId: string) => {
     setSelectedGuildId(guildId);
@@ -153,7 +153,7 @@ export function AppSidebar() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-56">
-                {guilds?.map((guild) => (
+                {guilds?.map((guild: { id: string; name: string; iconUrl?: string }) => (
                   <DropdownMenuItem
                     key={guild.id}
                     onClick={() => handleGuildChange(guild.id)}

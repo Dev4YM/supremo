@@ -267,7 +267,6 @@ export default function AutoModPage() {
                         <div className="flex items-center gap-2">
                           <Switch 
                             checked={rule.enabled} 
-                            size="sm"
                             // onCheckedChange would trigger API call to toggle rule
                           />
                           

@@ -19,7 +19,8 @@ import {
   actionsAPI,
   messagesAPI,
   discordAPI,
-  apiHealthAPI
+  apiHealthAPI,
+  auditAPI,
 } from '../api';
 import { User, Incident, GuildConfig } from '@supremo/shared-types';
 import { toast } from 'sonner';
@@ -115,6 +116,9 @@ export const queryKeys = {
     detail: (jobId: string) => ['jobs', jobId] as const,
     runs: (jobId: string) => ['jobs', jobId, 'runs'] as const,
   },
+  audit: {
+    guildLogs: (params?: { limit?: number; offset?: number }) => ['audit', 'guild-logs', params] as const,
+  },
   server: {
     info: ['server', 'info'] as const,
     roles: ['server', 'roles'] as const,
@@ -152,21 +156,12 @@ export const useAuth = () => {
   return useQuery({
     queryKey: queryKeys.auth.me,
     queryFn: async () => {
-      try {
-        const response = await authAPI.me();
-        // Handle different response structures
-        if (response.data?.data) {
-          return response.data.data;
-        } else if (response.data?.user) {
-          return response.data.user;
-        } else if (response.data) {
-          return response.data;
-        } else {
-          throw new Error('Invalid response structure');
-        }
-      } catch (error) {
-        throw error;
-      }
+      const response = await authAPI.me();
+      const d = response.data as unknown as Record<string, unknown>;
+      if (d && typeof d === 'object' && 'data' in d && d.data) return d.data as User;
+      if (d && typeof d === 'object' && 'user' in d && d.user) return d.user as User;
+      if (d && typeof d === 'object' && 'id' in d) return d as unknown as User;
+      throw new Error('Invalid response structure');
     },
     retry: (failureCount, error: any) => {
       // Don't retry if it's a 401 (unauthorized)
@@ -657,6 +652,21 @@ export const useGuildModerationActions = (params?: { limit?: number; offset?: nu
   });
 };
 
+export const useGuildPrismaAuditLogs = (
+  params?: { limit?: number; offset?: number },
+  options?: { enabled?: boolean },
+) => {
+  return useQuery({
+    queryKey: queryKeys.audit.guildLogs(params),
+    queryFn: async () => {
+      const response = await auditAPI.getGuildAuditLogs(params);
+      return extractResponseData(response, []);
+    },
+    staleTime: 30 * 1000,
+    enabled: options?.enabled !== false,
+  });
+};
+
 export const useCreateAutomation = () => {
   const queryClient = useQueryClient();
   
@@ -742,7 +752,7 @@ export const useCreateTicket = () => {
   return useMutation({
     mutationFn: (data: any) => ticketsAPI.createTicket(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.tickets.all() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.tickets.all });
       toast.success('Ticket created successfully!');
     },
     onError: (error: any) => {
@@ -758,7 +768,7 @@ export const useCreateCommand = () => {
   return useMutation({
     mutationFn: (data: any) => commandsAPI.createCommand(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.commands.all() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.commands.all });
       toast.success('Command created successfully!');
     },
     onError: (error: any) => {

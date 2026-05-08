@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNumber, IsArray, IsOptional, IsEnum, Min, Max } from 'class-validator';
+import { IsString, IsNumber, IsArray, IsOptional, IsEnum, Min, Max, IsIn } from 'class-validator';
 
 export class CreateIncidentDto {
   @ApiProperty({ description: 'User ID', example: 'user-uuid' })
@@ -32,10 +32,14 @@ export class CreateIncidentDto {
 }
 
 export class UpdateIncidentDto {
-  @ApiProperty({ description: 'Incident status', enum: ['pending', 'approved', 'rejected', 'expired'], required: false })
+  @ApiProperty({
+    description: 'Incident status (lowercase; mapped to Prisma enum on update)',
+    enum: ['pending', 'reviewing', 'approved', 'rejected', 'resolved'],
+    required: false,
+  })
   @IsOptional()
-  @IsEnum(['pending', 'approved', 'rejected', 'expired'])
-  status?: 'pending' | 'approved' | 'rejected' | 'expired';
+  @IsIn(['pending', 'reviewing', 'approved', 'rejected', 'resolved'])
+  status?: 'pending' | 'reviewing' | 'approved' | 'rejected' | 'resolved';
 
   @ApiProperty({ description: 'User ID who resolved the incident', required: false })
   @IsOptional()

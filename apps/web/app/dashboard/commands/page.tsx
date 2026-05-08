@@ -226,7 +226,7 @@ function CommandsPageContent() {
     {
       label: 'View Details',
       icon: Eye,
-      onClick: (row: any) => {
+      onClick: (row: Record<string, unknown>) => {
         setSelectedCommand(row)
         setShowCommandModal(true)
       }
@@ -234,28 +234,28 @@ function CommandsPageContent() {
     {
       label: 'Edit Command',
       icon: Edit,
-      onClick: (row: any) => {
+      onClick: (row: Record<string, unknown>) => {
         toast.info(`Edit command /${row.name}`)
       }
     },
     {
       label: 'Test Command',
       icon: Play,
-      onClick: (row: any) => {
+      onClick: (row: Record<string, unknown>) => {
         toast.info(`Testing command /${row.name}`)
       }
     },
     {
       label: 'Toggle Status',
-      icon: row => row.enabled ? Pause : Play,
-      onClick: (row: any) => {
+      icon: Play,
+      onClick: (row: Record<string, unknown>) => {
         toast.info(`${row.enabled ? 'Disabled' : 'Enabled'} command /${row.name}`)
       }
     },
     {
       label: 'Delete Command',
       icon: Trash2,
-      onClick: (row: any) => {
+      onClick: (row: Record<string, unknown>) => {
         toast.info(`Delete command /${row.name}`)
       },
       variant: 'destructive' as const
@@ -266,21 +266,21 @@ function CommandsPageContent() {
     {
       label: 'Enable Selected',
       icon: Play,
-      onClick: (rows: any[]) => {
+      onClick: (rows: Record<string, unknown>[]) => {
         toast.info(`Enable ${rows.length} commands`)
       }
     },
     {
       label: 'Disable Selected',
       icon: Pause,
-      onClick: (rows: any[]) => {
+      onClick: (rows: Record<string, unknown>[]) => {
         toast.info(`Disable ${rows.length} commands`)
       }
     },
     {
       label: 'Delete Selected',
       icon: Trash2,
-      onClick: (rows: any[]) => {
+      onClick: (rows: Record<string, unknown>[]) => {
         toast.info(`Delete ${rows.length} commands`)
       },
       variant: 'destructive' as const
@@ -326,7 +326,7 @@ function CommandsPageContent() {
         exportable={true}
         pagination={true}
         pageSize={25}
-        onRowClick={(row) => {
+        onRowClick={(row: Record<string, unknown>) => {
           setSelectedCommand(row)
           setShowCommandModal(true)
         }}

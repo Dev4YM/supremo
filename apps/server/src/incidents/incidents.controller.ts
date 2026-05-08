@@ -28,7 +28,7 @@ export class IncidentsController {
   })
   @ApiGuildParam()
   @ApiPaginationParams()
-  @ApiQuery({ name: 'status', required: false, enum: ['pending', 'approved', 'rejected'], description: 'Filter by status' })
+  @ApiQuery({ name: 'status', required: false, enum: ['PENDING', 'REVIEWING', 'APPROVED', 'REJECTED', 'RESOLVED'], description: 'Filter by status' })
   @ApiQuery({ name: 'userId', required: false, type: String, description: 'Filter by user ID' })
   @ApiGuildResponses()
   @ApiResponse({
