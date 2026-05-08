@@ -28,7 +28,7 @@ import {
   Loader2,
   Save,
 } from "lucide-react"
-import { useCases, useCreateCase } from "@/lib/hooks/use-api"
+import { useCases, useCreateCase, useDiscordMembers } from "@/lib/hooks/use-api"
 import { cn } from "@/lib/utils"
 import { Suspense } from "react"
 import { AdvancedDataTable } from "@/components/data-table/advanced-data-table"
@@ -57,6 +57,43 @@ const typeConfig = {
   OTHER: { icon: FileText, color: "text-muted-foreground", label: "Other" },
 }
 
+function caseStatusBadgeKey(status: string | undefined): keyof typeof statusConfig {
+  const s = (status || "open").toLowerCase()
+  const map: Record<string, keyof typeof statusConfig> = {
+    open: "OPEN",
+    investigating: "IN_PROGRESS",
+    assigned: "ASSIGNED",
+    resolved: "RESOLVED",
+    closed: "CLOSED",
+    appealed: "OPEN",
+  }
+  return map[s] ?? "OPEN"
+}
+
+function caseTypeBadgeKey(type: string | undefined): keyof typeof typeConfig {
+  const s = (type || "moderation").toLowerCase()
+  const map: Record<string, keyof typeof typeConfig> = {
+    moderation: "MODERATION",
+    appeal: "APPEAL",
+    report: "REPORT",
+    warning: "MODERATION",
+    technical: "TECHNICAL",
+    other: "OTHER",
+  }
+  return map[s] ?? "OTHER"
+}
+
+function casePriorityBadgeKey(priority: string | undefined): keyof typeof priorityConfig {
+  const s = (priority || "medium").toLowerCase()
+  const map: Record<string, keyof typeof priorityConfig> = {
+    low: "LOW",
+    medium: "MEDIUM",
+    high: "HIGH",
+    critical: "CRITICAL",
+  }
+  return map[s] ?? "MEDIUM"
+}
+
 function CasesPageContent() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [selectedCase, setSelectedCase] = useState<any>(null)
@@ -65,26 +102,35 @@ function CasesPageContent() {
     title: '',
     description: '',
     type: 'MODERATION',
-    priority: 'MEDIUM'
+    priority: 'MEDIUM',
+    subjectDiscordId: '',
+    subjectUsername: '',
   })
   
   const { data: cases = [], isLoading, refetch } = useCases({})
+  const { data: discordMembers = [], isLoading: membersLoading } = useDiscordMembers()
   const createCaseMutation = useCreateCase()
 
-  // Calculate stats
+  // Calculate stats (API returns lowercase statuses per Prisma schema)
   const stats = {
     total: cases.length,
-    open: cases.filter((c: any) => c.status === 'OPEN').length,
-    inProgress: cases.filter((c: any) => c.status === 'IN_PROGRESS').length,
-    resolved: cases.filter((c: any) => c.status === 'RESOLVED').length,
+    open: cases.filter((c: any) => ['open', 'appealed'].includes(String(c.status || '').toLowerCase())).length,
+    inProgress: cases.filter((c: any) => ['investigating', 'assigned'].includes(String(c.status || '').toLowerCase())).length,
+    resolved: cases.filter((c: any) => ['resolved', 'closed'].includes(String(c.status || '').toLowerCase())).length,
   }
 
   const handleCreateCase = async () => {
     try {
-      await createCaseMutation.mutateAsync(newCase)
-      toast.success('Case created successfully')
+      await createCaseMutation.mutateAsync({
+        title: newCase.title,
+        description: newCase.description,
+        type: newCase.type,
+        severity: newCase.priority,
+        subjectDiscordId: newCase.subjectDiscordId,
+        subjectUsername: newCase.subjectUsername || undefined,
+      })
       setShowCreateModal(false)
-      setNewCase({ title: '', description: '', type: 'MODERATION', priority: 'MEDIUM' })
+      setNewCase({ title: '', description: '', type: 'MODERATION', priority: 'MEDIUM', subjectDiscordId: '', subjectUsername: '' })
       refetch()
     } catch (error) {
       toast.error('Failed to create case')
@@ -94,9 +140,9 @@ function CasesPageContent() {
   // Prepare data for table
   const tableData = cases.map((caseItem: any) => ({
     ...caseItem,
-    statusConfig: statusConfig[caseItem.status as keyof typeof statusConfig],
-    priorityConfig: priorityConfig[caseItem.priority as keyof typeof priorityConfig],
-    typeConfig: typeConfig[caseItem.type as keyof typeof typeConfig],
+    statusConfig: statusConfig[caseStatusBadgeKey(caseItem.status)],
+    priorityConfig: priorityConfig[casePriorityBadgeKey(caseItem.severity ?? caseItem.priority)],
+    typeConfig: typeConfig[caseTypeBadgeKey(caseItem.type)],
   }))
 
   const columns = [
@@ -336,6 +382,44 @@ function CasesPageContent() {
               />
             </div>
             
+            <div>
+              <Label>Subject (Discord member)</Label>
+              <Select
+                value={newCase.subjectDiscordId || "__none__"}
+                onValueChange={(value) => {
+                  if (value === "__none__") {
+                    setNewCase((prev) => ({ ...prev, subjectDiscordId: "", subjectUsername: "" }))
+                    return
+                  }
+                  const m = discordMembers.find((x: any) => String(x.discordId || x.id) === value)
+                  setNewCase((prev) => ({
+                    ...prev,
+                    subjectDiscordId: value,
+                    subjectUsername: m ? (m.displayName || m.username || "member") : "",
+                  }))
+                }}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder={membersLoading ? "Loading members…" : "Select a member"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Select a member</SelectItem>
+                  {discordMembers.map((m: any) => {
+                    const id = String(m.discordId || m.id)
+                    const label = m.displayName || m.username || id
+                    return (
+                      <SelectItem key={id} value={id}>
+                        {label}
+                      </SelectItem>
+                    )
+                  })}
+                </SelectContent>
+              </Select>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Requires USERS_VIEW to load members. The API links or creates an internal user from this Discord ID.
+              </p>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Type</Label>
@@ -379,7 +463,12 @@ function CasesPageContent() {
             <div className="flex gap-2 pt-4">
               <Button 
                 onClick={handleCreateCase}
-                disabled={createCaseMutation.isPending || !newCase.title || !newCase.description}
+                disabled={
+                  createCaseMutation.isPending ||
+                  !newCase.title ||
+                  !newCase.description ||
+                  !newCase.subjectDiscordId
+                }
               >
                 {createCaseMutation.isPending ? (
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />

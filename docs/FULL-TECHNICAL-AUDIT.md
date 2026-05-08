@@ -219,7 +219,7 @@ The project is a **large monorepo** combining a **NestJS + Prisma + PostgreSQL**
 ### Mock / demo data
 
 - **`lib/mock-data.ts`** was **removed**; primary dashboard widgets use TanStack Query + guild APIs.
-- **`app/dashboard/automation/page.tsx`:** stats, workflow list, templates, and performance panel are **derived from** `useAutomations` / `useAutomationTemplates` (no mock rows).
+- **`app/dashboard/logs/page.tsx`:** moderation log list uses **`useGuildModerationActions`** (guild `GET /api/actions`) instead of removed **`lib/mock-data`**.
 
 ### Routing / UX debt
 
@@ -311,6 +311,11 @@ The following changes were applied in the same session as this report:
 | `getAutomationPerformance` uses lowercase `AutomationRun.status` values matching `workflow-engine.service.ts` | `api.controller.ts` |
 | Env: extra Redis warning when `PROCESS_TYPE` is `api` or `all` and Redis unset | `env.validation.ts` |
 | Supertest: incidents (list, id, create, `PUT`, approve, reject), actions (`GET`, `POST` `note` execute, 403 without `ACTIONS_EXECUTE`); `ActionsHttpSliceModule` + optional Discord override | `test/incidents-actions.http.e2e-spec.ts` |
+| Actions: `getActions` filters by `targetUserId` or legacy `userId`; execute supports **kick** / **ban** via Discord.js | `actions.service.ts` |
+| Cases: normalized **status/type/severity** filters for `findAll`; **create** accepts **`subjectDiscordId`** (+ optional username) with find-or-create `User` | `cases.service.ts` |
+| Cases dashboard: API-aligned status badges/stats; create flow picks **Discord member** (`USERS_VIEW`) and sends `subjectDiscordId` | `app/dashboard/cases/page.tsx` |
+| Logs dashboard: **`useGuildModerationActions`** instead of mock data | `app/dashboard/logs/page.tsx` |
+| Deployment: session cookie / ports subsection | `docs/DEPLOYMENT-TOPOLOGY.md` |
 | Removed unused `apps/web/lib/mock-data.ts` | (deleted) |
 
 ---

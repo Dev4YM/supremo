@@ -37,9 +37,9 @@ out/
 .turbo/
 
 # ---------------------------------------------------
-# Logs
+# Logs (root only — do not use `logs/` or Next.js `app/**/logs/` routes are ignored)
 # ---------------------------------------------------
-logs/
+/logs/
 *.log
 npm-debug.log*
 yarn-debug.log*

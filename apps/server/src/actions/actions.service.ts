@@ -62,6 +62,12 @@ export class ActionsService {
       case 'note':
         result = { success: true, message: 'Note recorded' };
         break;
+      case 'kick':
+        result = await this.executeKick(member, data.reason);
+        break;
+      case 'ban':
+        result = await this.executeBan(member, data.reason);
+        break;
       default:
         throw new BadRequestException(`Unknown action type: ${data.actionType}`);
     }
@@ -124,13 +130,37 @@ export class ActionsService {
     }
   }
 
+  private async executeKick(member: any, reason?: string) {
+    try {
+      await member.kick(reason || 'Moderation kick');
+      return { success: true, message: 'User kicked from the server' };
+    } catch (error) {
+      this.logger.error(`Error kicking user ${member.user?.tag}:`, error);
+      throw error;
+    }
+  }
+
+  private async executeBan(member: any, reason?: string) {
+    try {
+      await member.ban({
+        deleteMessageSeconds: 0,
+        reason: reason || 'Moderation ban',
+      });
+      return { success: true, message: 'User banned from the server' };
+    } catch (error) {
+      this.logger.error(`Error banning user ${member.user?.tag}:`, error);
+      throw error;
+    }
+  }
+
   async getActions(filters?: { guildId: string; userId?: string; limit?: number; offset?: number }) {
     const where: any = {
       guildId: filters?.guildId,
     };
     
     if (filters?.userId) {
-      where.userId = filters.userId;
+      // Primary key is targetUserId; legacy rows may still have userId populated.
+      where.OR = [{ targetUserId: filters.userId }, { userId: filters.userId }];
     }
 
     return this.prisma.action.findMany({

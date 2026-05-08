@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { DiscordService } from '../discord/discord.service';
 
@@ -11,17 +11,74 @@ export class CasesService {
     private readonly discordService: DiscordService,
   ) {}
 
+  /** Map dashboard / query-param enums to Prisma `Case.status` (lowercase). */
+  private normalizeCaseStatusFilter(status: string): string {
+    const key = status.trim().toUpperCase();
+    const map: Record<string, string> = {
+      OPEN: 'open',
+      IN_PROGRESS: 'investigating',
+      ASSIGNED: 'open',
+      INVESTIGATING: 'investigating',
+      RESOLVED: 'resolved',
+      CLOSED: 'closed',
+      APPEALED: 'appealed',
+    };
+    return map[key] ?? status.trim().toLowerCase();
+  }
+
+  private normalizeCaseTypeFilter(type: string): string {
+    const key = type.trim().toUpperCase();
+    const map: Record<string, string> = {
+      MODERATION: 'moderation',
+      APPEAL: 'appeal',
+      REPORT: 'report',
+      WARNING: 'warning',
+      TECHNICAL: 'technical',
+      OTHER: 'other',
+    };
+    return map[key] ?? type.trim().toLowerCase();
+  }
+
+  private normalizeCaseSeverity(value: string): string {
+    const key = value.trim().toUpperCase();
+    const map: Record<string, string> = {
+      LOW: 'low',
+      MEDIUM: 'medium',
+      HIGH: 'high',
+      CRITICAL: 'critical',
+    };
+    return map[key] ?? value.trim().toLowerCase();
+  }
+
   async findAll(guildId: string, filters?: {
     status?: string;
     type?: string;
     assignedTo?: string;
     userId?: string;
   }) {
+    const where: {
+      guildId: string;
+      status?: string;
+      type?: string;
+      assignedTo?: string;
+      userId?: string;
+    } = { guildId };
+
+    if (filters?.status) {
+      where.status = this.normalizeCaseStatusFilter(filters.status);
+    }
+    if (filters?.type) {
+      where.type = this.normalizeCaseTypeFilter(filters.type);
+    }
+    if (filters?.assignedTo) {
+      where.assignedTo = filters.assignedTo;
+    }
+    if (filters?.userId) {
+      where.userId = filters.userId;
+    }
+
     return this.prisma.case.findMany({
-      where: {
-        guildId,
-        ...filters,
-      },
+      where,
       include: {
         user: true,
         evidenceItems: true,
@@ -57,18 +114,49 @@ export class CasesService {
   }
 
   /**
-   * Create a new case
+   * Create a new case. Provide either `userId` (internal User id) or `subjectDiscordId`
+   * (Discord snowflake for this guild); the latter will find-or-create a `User` row.
    */
-  async create(guildId: string, data: {
-    userId: string;
-    type: string;
-    severity: string;
-    title: string;
-    description: string;
-    evidence?: string[];
-    createdBy: string;
-    assignedTo?: string;
-  }) {
+  async create(
+    guildId: string,
+    data: {
+      userId?: string;
+      subjectDiscordId?: string;
+      subjectUsername?: string;
+      type: string;
+      severity: string;
+      title: string;
+      description: string;
+      evidence?: string[];
+      createdBy: string;
+      assignedTo?: string;
+    },
+  ) {
+    let userId = data.userId;
+    if (!userId && data.subjectDiscordId) {
+      const discordId = data.subjectDiscordId.trim();
+      let user = await this.prisma.user.findUnique({
+        where: { guildId_discordId: { guildId, discordId } },
+      });
+      if (!user) {
+        user = await this.prisma.user.create({
+          data: {
+            guildId,
+            discordId,
+            username: (data.subjectUsername || 'unknown').slice(0, 80),
+          },
+        });
+      }
+      userId = user.id;
+    }
+
+    if (!userId) {
+      throw new BadRequestException('Case requires userId or subjectDiscordId');
+    }
+
+    const type = this.normalizeCaseTypeFilter(data.type);
+    const severity = this.normalizeCaseSeverity(data.severity);
+
     // Get next case number
     const lastCase = await this.prisma.case.findFirst({
       where: { guildId },
@@ -81,8 +169,14 @@ export class CasesService {
       data: {
         guildId,
         caseNumber,
-        ...data,
+        userId,
+        type,
+        severity,
+        title: data.title,
+        description: data.description,
         evidence: data.evidence || [],
+        createdBy: data.createdBy,
+        assignedTo: data.assignedTo,
         status: 'open',
       },
       include: {
