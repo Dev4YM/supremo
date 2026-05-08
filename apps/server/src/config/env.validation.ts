@@ -148,6 +148,11 @@ export function validateEnv(): EnvConfig {
   if (!process.env.REDIS_HOST && !process.env.REDIS_URL) {
     logger.warn('Redis configuration not found. Queue system requires Redis.');
     logger.warn('Set REDIS_HOST and REDIS_PORT, or REDIS_URL');
+    if (processType === 'api' || processType === 'all') {
+      logger.warn(
+        `PROCESS_TYPE=${processType}: Bull queues (actions, incidents, ml-analysis) cannot process jobs until Redis is configured.`,
+      );
+    }
   }
 
   return {

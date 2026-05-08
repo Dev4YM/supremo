@@ -8,7 +8,7 @@
 
 ## Executive summary
 
-The project is a **large monorepo** combining a **NestJS + Prisma + PostgreSQL** backend (Discord bot, REST API, optional Bull queues, Socket.IO) with a **Next.js 16** dashboard. The **data model and module surface area suggest an enterprise moderation platform**; **implementation quality is uneven** but a **remediation pass** addressed the highest-risk auth/RBAC/realtime issues, **removed `vm2`**, **aligned `AppModule` HTTP surface** closer to `ApiModule`, **replaced the global `JSON.stringify` BigInt patch** with an interceptor, and **rewired primary dashboard widgets** to guild-scoped APIs instead of `mock-data`. Automated tests remain **limited** relative to scope (unit tests for OAuth exchange codes and `PermissionGuard`; **HTTP supertest suite** for session cookie, Bearer token, and `x-guild-id` / `GuildGuard` with mocked Prisma/RBAC). Overall maturity: **internal alpha**, closer to a maintainable internal pilot than before, still not production-hardened without E2E coverage and further automation hardening.
+The project is a **large monorepo** combining a **NestJS + Prisma + PostgreSQL** backend (Discord bot, REST API, optional Bull queues, Socket.IO) with a **Next.js 16** dashboard. The **data model and module surface area suggest an enterprise moderation platform**; **implementation quality is uneven** but a **remediation pass** addressed the highest-risk auth/RBAC/realtime issues, **removed `vm2`**, **aligned `AppModule` HTTP surface** closer to `ApiModule`, **replaced the global `JSON.stringify` BigInt patch** with an interceptor, and **rewired primary dashboard widgets** to guild-scoped APIs instead of `mock-data`. Automated tests remain **limited** relative to scope (unit tests for OAuth exchange codes and `PermissionGuard`; **HTTP supertest** for auth/guild probes, **`GET /api/health`**, **`GET /api/stats`**, **`GET /api/analytics/rules`**, **`GET /api/analytics/automations`**, **`GET /api/analytics/automations/performance`** with cookie/Bearer, `x-guild-id`, and **`ANALYTICS_VIEW`** vs 403 — all with mocked Prisma/RBAC, no real database). Overall maturity: **internal alpha**, closer to a maintainable internal pilot than before, still not production-hardened without full DB-backed E2E and further automation hardening.
 
 ---
 
@@ -42,7 +42,7 @@ The project is a **large monorepo** combining a **NestJS + Prisma + PostgreSQL**
 
 - **Required:** `DATABASE_URL`; `DISCORD_BOT_TOKEN` if `PROCESS_TYPE` is `bot` or `all`.
 - **Production:** exits if `SESSION_SECRET` missing when `NODE_ENV=production`.
-- **Redis:** warned optional though queues need it.
+- **Redis:** warned optional though queues need it; when **`PROCESS_TYPE`** is **`api`** or **`all`** and neither **`REDIS_HOST`** nor **`REDIS_URL`** is set, startup logs an extra warning that Bull queues cannot process jobs until Redis is configured.
 - **`.env.example`** lists `WEB_URL` (previously underused in auth redirects in code paths that still had hardcoded IPs).
 
 ### Verdict
@@ -114,6 +114,10 @@ The project is a **large monorepo** combining a **NestJS + Prisma + PostgreSQL**
 ### Verdict
 
 **Fixed:** `GuildGuard` added to both routes.
+
+### Follow-up (same audit cycle)
+
+- **`GET /api/analytics/automations/performance`:** `AutomationRun.status` is stored **lowercase** (`success` / `failed` / `running`, see `workflow-engine.service.ts`). The controller previously compared **uppercase** strings, so success/failed/running counts were wrong. **Fixed:** comparisons aligned to stored values.
 
 ---
 
@@ -193,11 +197,11 @@ The project is a **large monorepo** combining a **NestJS + Prisma + PostgreSQL**
 
 ### Findings
 
-- Jest configured; coverage remains thin relative to scope. **Unit tests** under `apps/server/src/**` cover **OAuth exchange codes** (`SessionService`) and **`PermissionGuard`**. **HTTP integration tests** under `apps/server/test/**` (supertest) exercise **`POST /api/auth/oauth-exchange`**, **`GET /api/auth/me`** (cookie + Bearer), and **`x-guild-id`** with `SessionGuard` + `GuildGuard` using mocked `PrismaService` / `RbacService` (no real database).
+- Jest configured; coverage remains thin relative to scope. **Unit tests** under `apps/server/src/**` cover **OAuth exchange codes** (`SessionService`) and **`PermissionGuard`**. **HTTP integration tests** under `apps/server/test/**` (supertest) exercise **`POST /api/auth/oauth-exchange`**, **`GET /api/auth/me`** (cookie + Bearer), **`GET /api/health`**, **`GET /api/stats`** (guild header, `ANALYTICS_VIEW` vs 403), **`GET /api/analytics/rules`**, **`GET /api/analytics/automations`**, **`GET /api/analytics/automations/performance`** (mocked `incident.groupBy`, `automation` / `jobRun` / `automationRun`), **`GET /api/analytics/rules`** 403 without `ANALYTICS_VIEW`, and **`x-guild-id`** with `SessionGuard` + `GuildGuard` using mocked `PrismaService` / `RbacService` (no real database).
 
 ### Verdict
 
-**Critical gap** remains for E2E and supertest coverage of HTTP controllers; continue expanding tests for auth, RBAC, and guild-scoped APIs.
+**Critical gap** remains for DB-backed E2E and supertest coverage of the rest of the HTTP surface (incidents, actions, domain controllers); continue expanding tests for auth, RBAC, and guild-scoped APIs.
 
 ---
 
@@ -215,7 +219,7 @@ The project is a **large monorepo** combining a **NestJS + Prisma + PostgreSQL**
 ### Mock / demo data
 
 - **`lib/mock-data.ts`** was **removed**; primary dashboard widgets use TanStack Query + guild APIs.
-- **`app/dashboard/automation/page.tsx`:** uses real `useAutomations` / templates where applicable; any remaining static copy should be flagged per-page.
+- **`app/dashboard/automation/page.tsx`:** stats, workflow list, templates, and performance panel are **derived from** `useAutomations` / `useAutomationTemplates` (no mock rows).
 
 ### Routing / UX debt
 
@@ -241,15 +245,16 @@ The project is a **large monorepo** combining a **NestJS + Prisma + PostgreSQL**
 | `PermissionGuard` without guild | High | **Fixed** |
 | Debug `ADMIN` vs seeded keys | Medium | **Fixed** → `SYSTEM_ADMIN` |
 | Missing `GuildGuard` on analytics routes | High | **Fixed** |
+| Automation performance counted wrong `AutomationRun.status` casing vs DB | Medium | **Fixed** (lowercase `success` / `failed` / `running`) |
 
 ---
 
 ## 13. Recommendations (priority)
 
-1. **Security:** ~~Remove `vm2`~~ (done); add E2E tests for OAuth, cookies, and guild ACLs.
+1. **Security:** ~~Remove `vm2`~~ (done); expand E2E / supertest (partial: auth, guild, health, stats, **`/api/analytics/*`**); add **DB-backed** E2E for OAuth and guild ACLs when CI has Postgres.
 2. **Web:** ~~Delete `app/(dashboard)`~~ (done); ~~remove mock-driven dashboard widgets~~ (done); ~~delete `lib/mock-data.ts`~~ (done).
 3. **Ops:** Standardize on `PROCESS_TYPE=api` + `bot` + Redis + Postgres; document ports and cookie domains for same-site auth.
-4. **Quality:** Add Jest/supertest (or e2e) for permission matrix and critical controllers.
+4. **Quality:** ~~Add Jest/supertest~~ (partial: auth + guild + health + stats + **`/api/analytics/*`**); continue with incidents, actions, and remaining domain controllers.
 
 ---
 
@@ -302,6 +307,9 @@ The following changes were applied in the same session as this report:
 | `actionsAPI.getActions(params)`; `useGuildModerationActions`; automation list query key `actionDefinitions` | `apps/web/lib/api.ts`, `apps/web/lib/hooks/use-api.ts` |
 | Jest: OAuth exchange map + `PermissionGuard` matrix | `session.service.spec.ts`, `permission.guard.spec.ts` |
 | Supertest: OAuth cookie, Bearer, `x-guild-id` + `GuildGuard` | `test/auth-guild.http.e2e-spec.ts`, `test/jest-http-e2e.json`, `package.json` `test:e2e` |
+| Supertest: `GET /api/health`, `GET /api/stats`, `/api/analytics/*` + `ANALYTICS_VIEW` / 403; Prisma mock extended for `automation`, `jobRun`, `automationRun` | `test/api-stats.http.e2e-spec.ts` |
+| `getAutomationPerformance` uses lowercase `AutomationRun.status` values matching `workflow-engine.service.ts` | `api.controller.ts` |
+| Env: extra Redis warning when `PROCESS_TYPE` is `api` or `all` and Redis unset | `env.validation.ts` |
 | Removed unused `apps/web/lib/mock-data.ts` | (deleted) |
 
 ---

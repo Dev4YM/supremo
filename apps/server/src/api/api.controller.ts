@@ -194,11 +194,11 @@ export class ApiController {
       const perf = performanceByAutomation[automationId];
       perf.totalRuns++;
 
-      if (run.status === 'SUCCESS') {
+      if (run.status === 'success') {
         perf.successfulRuns++;
-      } else if (run.status === 'FAILED') {
+      } else if (run.status === 'failed') {
         perf.failedRuns++;
-      } else if (run.status === 'RUNNING') {
+      } else if (run.status === 'running') {
         perf.runningRuns++;
       }
 
@@ -247,9 +247,9 @@ export class ApiController {
 
     // Overall statistics
     const totalRuns = automationRuns.length;
-    const successfulRuns = automationRuns.filter((r) => r.status === 'SUCCESS').length;
-    const failedRuns = automationRuns.filter((r) => r.status === 'FAILED').length;
-    const runningRuns = automationRuns.filter((r) => r.status === 'RUNNING').length;
+    const successfulRuns = automationRuns.filter((r) => r.status === 'success').length;
+    const failedRuns = automationRuns.filter((r) => r.status === 'failed').length;
+    const runningRuns = automationRuns.filter((r) => r.status === 'running').length;
 
     const allDurations = automationRuns
       .filter((r) => r.duration)
