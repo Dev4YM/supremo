@@ -44,6 +44,7 @@ import {
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { useGuildSettings } from "@/lib/hooks/use-guild-settings"
+import { useRevokeOtherSessions, useRevokeSession, useUserSessions } from "@/lib/hooks/use-api"
 import { Loader2 } from "lucide-react"
 
 export default function SettingsPage() {
@@ -64,18 +65,15 @@ export default function SettingsPage() {
     saveModeration,
     saveNotifications,
     saveAppearance,
+    saveSecurity,
+    securitySettings,
+    setSecuritySettings,
     isSaving,
   } = useGuildSettings()
 
-  const [securitySettings, setSecuritySettings] = useState({
-    twoFactorAuth: false,
-    sessionTimeout: 24,
-    ipWhitelist: false,
-    auditLog: true,
-    encryptData: true,
-    backupEnabled: true,
-    allowedIPs: []
-  })
+  const { data: sessions = [], isLoading: sessionsLoading } = useUserSessions()
+  const revokeSession = useRevokeSession()
+  const revokeOtherSessions = useRevokeOtherSessions()
 
   const handleSaveSettings = async (section: string) => {
     try {
@@ -83,10 +81,7 @@ export default function SettingsPage() {
       else if (section === 'Moderation') await saveModeration()
       else if (section === 'Notifications') await saveNotifications()
       else if (section === 'Appearance') await saveAppearance()
-      else if (section === 'Security') {
-        await saveConfigSection('settings.security', securitySettings)
-        toast.success('Security preferences saved')
-      }
+      else if (section === 'Security') await saveSecurity()
     } catch {
       toast.error(`Failed to save ${section} settings`)
     }
@@ -99,6 +94,14 @@ export default function SettingsPage() {
       value: JSON.stringify(value),
       category: 'dashboard_settings',
     })
+  }
+
+  const formatSessionAgent = (userAgent?: string | null) => {
+    if (!userAgent) return 'Unknown device'
+    if (userAgent.includes('Chrome')) return 'Chrome'
+    if (userAgent.includes('Firefox')) return 'Firefox'
+    if (userAgent.includes('Safari')) return 'Safari'
+    return userAgent.slice(0, 48)
   }
 
   const handleResetSettings = (section: string) => {
@@ -660,6 +663,76 @@ export default function SettingsPage() {
                   className="mt-1 w-32"
                 />
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Key className="w-5 h-5" />
+                Active Sessions
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Manage devices signed in to your dashboard account
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => revokeOtherSessions.mutate()}
+                  disabled={revokeOtherSessions.isPending}
+                >
+                  <RefreshCw className={cn("w-4 h-4 mr-2", revokeOtherSessions.isPending && "animate-spin")} />
+                  Revoke other sessions
+                </Button>
+              </div>
+
+              {sessionsLoading ? (
+                <div className="flex items-center text-muted-foreground text-sm">
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Loading sessions…
+                </div>
+              ) : sessions.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No active sessions found.</p>
+              ) : (
+                <div className="space-y-3">
+                  {sessions.map((session) => (
+                    <div
+                      key={session.id}
+                      className="flex items-center justify-between rounded-lg border p-3"
+                    >
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm">
+                            {formatSessionAgent(session.userAgent)}
+                          </span>
+                          {session.current && (
+                            <Badge variant="secondary" className="text-xs">Current</Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {session.ip || 'Unknown IP'} · Last seen{' '}
+                          {session.lastSeenAt
+                            ? new Date(session.lastSeenAt).toLocaleString()
+                            : new Date(session.createdAt).toLocaleString()}
+                        </p>
+                      </div>
+                      {!session.current && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => revokeSession.mutate(session.id)}
+                          disabled={revokeSession.isPending}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 

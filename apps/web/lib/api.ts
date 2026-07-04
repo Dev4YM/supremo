@@ -105,6 +105,23 @@ export const authAPI = {
   
   logout: () =>
     apiClient.post<ApiResponse>('/api/auth/logout'),
+
+  getSessions: () =>
+    apiClient.get<ApiResponse<{ sessions: Array<{
+      id: string
+      ip?: string | null
+      userAgent?: string | null
+      createdAt: string
+      lastSeenAt?: string | null
+      expiresAt: string
+      current?: boolean
+    }> }>>('/api/auth/sessions'),
+
+  revokeSession: (sessionId: string) =>
+    apiClient.delete<ApiResponse>(`/api/auth/sessions/${sessionId}`),
+
+  revokeOtherSessions: () =>
+    apiClient.post<ApiResponse<{ revokedCount: number }>>('/api/auth/sessions/revoke-others'),
 };
 
 // Guild API - matches backend /api/guilds endpoints

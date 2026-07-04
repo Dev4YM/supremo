@@ -44,6 +44,7 @@ const extractResponseData = (response: any, fallback: any = null) => {
 export const queryKeys = {
   auth: {
     me: ['auth', 'me'] as const,
+    sessions: ['auth', 'sessions'] as const,
   },
   guilds: {
     all: ['guilds'] as const,
@@ -207,6 +208,48 @@ export const useLogout = () => {
       localStorage.removeItem('selectedGuildId');
       queryClient.clear();
       toast.success('Successfully logged out!');
+    },
+  });
+};
+
+export const useUserSessions = () => {
+  return useQuery({
+    queryKey: queryKeys.auth.sessions,
+    queryFn: async () => {
+      const response = await authAPI.getSessions();
+      return extractResponseData(response, { sessions: [] }).sessions;
+    },
+    staleTime: 30 * 1000,
+  });
+};
+
+export const useRevokeSession = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (sessionId: string) => authAPI.revokeSession(sessionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.auth.sessions });
+      toast.success('Session revoked');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to revoke session');
+    },
+  });
+};
+
+export const useRevokeOtherSessions = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => authAPI.revokeOtherSessions(),
+    onSuccess: (response) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.auth.sessions });
+      const count = extractResponseData(response, { revokedCount: 0 }).revokedCount;
+      toast.success(count > 0 ? `Revoked ${count} other session(s)` : 'No other sessions to revoke');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to revoke sessions');
     },
   });
 };
@@ -727,6 +770,40 @@ export const useDeleteAutomation = () => {
     onError: (error: any) => {
       toast.error(error.response?.data?.message || 'Failed to delete automation');
     },
+  });
+};
+
+export const useAutomationRuns = (automationId: string, params?: { limit?: number; offset?: number }) => {
+  return useQuery({
+    queryKey: [...queryKeys.automation.runs(automationId), params],
+    queryFn: async () => {
+      const response = await automationAPI.getAutomationRuns(automationId);
+      return extractResponseData(response, []);
+    },
+    enabled: !!automationId,
+    staleTime: 30 * 1000,
+  });
+};
+
+export const useWorkflowAnalytics = (automationId: string, limit = 100) => {
+  return useQuery({
+    queryKey: [...queryKeys.automation.analytics(automationId), limit],
+    queryFn: async () => {
+      const response = await automationAPI.getAutomationAnalytics(automationId);
+      return extractResponseData(response, {
+        totalRuns: 0,
+        successRate: 0,
+        avgDuration: 0,
+        medianDuration: 0,
+        minDuration: 0,
+        maxDuration: 0,
+        slowestBlocks: [],
+        failureReasons: [],
+        executionTimeline: [],
+      });
+    },
+    enabled: !!automationId,
+    staleTime: 60 * 1000,
   });
 };
 

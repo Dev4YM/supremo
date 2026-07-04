@@ -49,7 +49,62 @@ const SUPPORTED_ACTIONS = new Set([
   'wait',
   'create_incident',
   'update_trust_score',
+  'condition',
 ])
+
+type ComparisonOperator =
+  | 'eq'
+  | 'neq'
+  | 'gt'
+  | 'gte'
+  | 'lt'
+  | 'lte'
+  | 'contains'
+  | 'not_contains'
+  | 'includes'
+  | 'not_includes'
+  | 'within_days'
+  | 'exists'
+
+interface StructuredCondition {
+  field: string
+  operator: ComparisonOperator
+  value?: string | number | boolean
+  caseSensitive?: boolean
+}
+
+export function conditionFromBuilderSubtype(
+  subtype: string,
+  config: Record<string, unknown>,
+): StructuredCondition {
+  switch (subtype) {
+    case 'user_has_role':
+      return {
+        field: 'user.roles',
+        operator: 'includes',
+        value: String(config.role ?? ''),
+      }
+    case 'message_contains':
+      return {
+        field: 'message.content',
+        operator: 'contains',
+        value: String(config.text ?? ''),
+        caseSensitive: Boolean(config.case_sensitive),
+      }
+    case 'user_joined_recently':
+      return {
+        field: 'user.joinDate',
+        operator: 'within_days',
+        value: Number(config.timeframe ?? 7),
+      }
+    default:
+      return {
+        field: String(config.field ?? 'trustScore'),
+        operator: (config.operator as ComparisonOperator) ?? 'gte',
+        value: config.value as string | number,
+      }
+  }
+}
 
 function normalizeActionConfig(node: WorkflowBuilderNode): Record<string, unknown> {
   const config = { ...node.config }
@@ -93,10 +148,11 @@ export function transformWorkflowToApiPayload(workflow: WorkflowBuilderState) {
   const triggerType = TRIGGER_TYPE_MAP[triggerSubtype] || triggerSubtype
 
   const executableNodes = workflow.nodes.filter(
-    (n) => n.type === 'action' || n.type === 'delay',
+    (n) => n.type === 'action' || n.type === 'delay' || n.type === 'condition',
   )
 
   const unsupported = executableNodes.filter((n) => {
+    if (n.type === 'condition') return false
     const mapped = ACTION_TYPE_MAP[n.subtype || ''] || n.subtype || ''
     return !SUPPORTED_ACTIONS.has(mapped)
   })
@@ -108,8 +164,21 @@ export function transformWorkflowToApiPayload(workflow: WorkflowBuilderState) {
   }
 
   const blocks = executableNodes.map((node, index) => {
-    const blockType = ACTION_TYPE_MAP[node.subtype || ''] || node.subtype || 'send_message'
     const next = executableNodes[index + 1]
+
+    if (node.type === 'condition') {
+      return {
+        id: node.id,
+        type: 'condition',
+        config: {
+          structured: conditionFromBuilderSubtype(node.subtype || '', node.config),
+        },
+        onTrue: next?.id,
+        onFalse: undefined,
+      }
+    }
+
+    const blockType = ACTION_TYPE_MAP[node.subtype || ''] || node.subtype || 'send_message'
     return {
       id: node.id,
       type: blockType,
@@ -134,6 +203,11 @@ export function transformWorkflowToApiPayload(workflow: WorkflowBuilderState) {
   }
 }
 
+const REVERSE_ACTION_MAP: Record<string, string> = {
+  wait: 'delay',
+  timeout: 'timeout_user',
+}
+
 export function parseAutomationToBuilder(automation: {
   name: string
   description?: string | null
@@ -152,15 +226,66 @@ export function parseAutomationToBuilder(automation: {
     config: triggerConfig,
   }
 
-  const actionNodes: WorkflowBuilderNode[] = (workflowDef.blocks || []).map(
-    (block: { id: string; type: string; config?: Record<string, unknown> }) => ({
+  const blocks: Array<{ id: string; type: string; config?: Record<string, unknown>; structured?: StructuredCondition }> =
+    workflowDef.blocks || []
+
+  const orderedBlocks: typeof blocks = []
+  const visited = new Set<string>()
+  let cursor = workflowDef.entryPoint
+
+  while (cursor && !visited.has(cursor)) {
+    const block = blocks.find((b) => b.id === cursor)
+    if (!block) break
+    orderedBlocks.push(block)
+    visited.add(cursor)
+    cursor = block.onSuccess || block.onTrue
+  }
+
+  for (const block of blocks) {
+    if (!visited.has(block.id)) {
+      orderedBlocks.push(block)
+    }
+  }
+
+  const actionNodes: WorkflowBuilderNode[] = orderedBlocks.map((block) => {
+    if (block.type === 'condition') {
+      const structured = (block.config as { structured?: StructuredCondition })?.structured
+      let subtype = 'user_has_role'
+      const config: Record<string, unknown> = {}
+
+      if (structured?.field === 'user.roles') {
+        subtype = 'user_has_role'
+        config.role = structured.value
+      } else if (structured?.field === 'message.content') {
+        subtype = 'message_contains'
+        config.text = structured.value
+        config.case_sensitive = structured.caseSensitive
+      } else if (structured?.field === 'user.joinDate') {
+        subtype = 'user_joined_recently'
+        config.timeframe = structured.value
+      } else if (structured) {
+        config.field = structured.field
+        config.operator = structured.operator
+        config.value = structured.value
+      }
+
+      return {
+        id: block.id,
+        type: 'condition',
+        subtype,
+        name: 'Condition',
+        config,
+      }
+    }
+
+    return {
       id: block.id,
       type: block.type === 'wait' ? 'delay' : 'action',
-      subtype: block.type === 'wait' ? 'delay' : block.type,
+      subtype: REVERSE_ACTION_MAP[block.type] || block.type,
       name: block.type,
       config: block.config || {},
-    }),
-  )
+    }
+  })
 
   return {
     name: automation.name,

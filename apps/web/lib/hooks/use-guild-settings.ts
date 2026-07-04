@@ -74,6 +74,16 @@ export function useGuildSettings() {
     embedColor: '#5865F2',
   })
 
+  const [securitySettings, setSecuritySettings] = useState({
+    twoFactorAuth: false,
+    sessionTimeout: 24,
+    ipWhitelist: false,
+    auditLog: true,
+    encryptData: true,
+    backupEnabled: true,
+    allowedIPs: [] as string[],
+  })
+
   useEffect(() => {
     if (!branding) return
     setGeneralSettings((prev) => ({
@@ -108,6 +118,10 @@ export function useGuildSettings() {
     setNotificationSettings((prev) => ({
       ...prev,
       ...((parseConfigValue(configMap['settings.notifications'], prev) as typeof prev) || prev),
+    }))
+    setSecuritySettings((prev) => ({
+      ...prev,
+      ...((parseConfigValue(configMap['settings.security'], prev) as typeof prev) || prev),
     }))
   }, [configs, configMap])
 
@@ -154,6 +168,11 @@ export function useGuildSettings() {
     toast.success('Appearance settings saved')
   }
 
+  const saveSecurity = async () => {
+    await persistConfig('settings.security', securitySettings)
+    toast.success('Security preferences saved')
+  }
+
   return {
     isLoading: brandingLoading || configsLoading,
     generalSettings,
@@ -164,10 +183,13 @@ export function useGuildSettings() {
     setNotificationSettings,
     appearanceSettings,
     setAppearanceSettings,
+    securitySettings,
+    setSecuritySettings,
     saveGeneral,
     saveModeration,
     saveNotifications,
     saveAppearance,
+    saveSecurity,
     isSaving: updateBranding.isPending || saveConfig.isPending,
   }
 }

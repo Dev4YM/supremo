@@ -1,41 +1,56 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { BaseAction } from '../base.action';
 import { WorkflowContext, ActionResult } from '../../interfaces/action.interface';
+import {
+  evaluateSafeExpression,
+  StructuredCondition,
+} from '../../safe-expression.evaluator';
 
 @Injectable()
 export class ConditionAction extends BaseAction {
-  private readonly logger = new Logger(ConditionAction.name);
   type = 'condition';
   name = 'Condition';
-  description = 'Evaluate a condition (disabled — vm2 removed for security)';
+  description = 'Evaluate a safe comparison (no arbitrary code execution)';
   icon = '🔀';
   category = 'utility';
 
-  async execute(_context: WorkflowContext, config: any): Promise<ActionResult> {
-    if (!config?.expression) {
-      return this.failure('Expression is required');
+  async execute(context: WorkflowContext, config: any): Promise<ActionResult> {
+    if (config?.structured) {
+      const result = evaluateSafeExpression(context, config.structured as StructuredCondition);
+      return this.success({ result }, { evaluated: config.structured });
     }
-    this.logger.warn('condition action invoked but in-process JS evaluation is disabled (vm2 removed).');
-    return this.failure(
-      'JavaScript condition evaluation is disabled. The previous vm2-based implementation was removed for security. ' +
-        'Use rule-based triggers or supported comparison actions.',
-    );
+
+    if (config?.expression) {
+      const result = evaluateSafeExpression(context, String(config.expression));
+      return this.success({ result }, { expression: config.expression });
+    }
+
+    return this.failure('Condition requires structured rules or a safe expression');
   }
 
   validate(config: any): boolean {
-    return !!config.expression;
+    return Boolean(config?.structured || config?.expression);
   }
 
   getConfigSchema(): any {
     return {
       type: 'object',
       properties: {
+        structured: {
+          type: 'object',
+          description: 'Structured comparison { field, operator, value }',
+          properties: {
+            field: { type: 'string' },
+            operator: { type: 'string' },
+            value: {},
+            caseSensitive: { type: 'boolean' },
+          },
+        },
         expression: {
           type: 'string',
-          description: 'Not evaluated — reserved for future safe expression engine.',
+          description: 'Simple expression e.g. trustScore >= 50',
         },
       },
-      required: ['expression'],
     };
   }
 }

@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { DiscordService } from '../discord/discord.service';
+import { RealtimeGateway } from '../api-server/websocket/realtime.gateway';
 
 @Injectable()
 export class TrustReputationService {
@@ -9,6 +10,7 @@ export class TrustReputationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly discordService: DiscordService,
+    @Optional() private readonly realtimeGateway?: RealtimeGateway,
   ) {}
 
   async getConfig(guildId: string) {
@@ -91,12 +93,15 @@ export class TrustReputationService {
     score = Math.max(config.minScore, Math.min(config.maxScore, score));
 
     // Update user trust score
+    const roundedScore = Math.round(score);
     await this.prisma.user.update({
       where: { id: userId },
-      data: { trustScore: Math.round(score) },
+      data: { trustScore: roundedScore },
     });
 
-    return Math.round(score);
+    this.realtimeGateway?.broadcastTrustScoreUpdate(guildId, userId, roundedScore);
+
+    return roundedScore;
   }
 
   /**

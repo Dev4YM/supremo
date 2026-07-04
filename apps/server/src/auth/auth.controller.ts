@@ -2,10 +2,12 @@ import {
   Controller,
   Post,
   Get,
+  Delete,
   Body,
   UseGuards,
   Req,
   Res,
+  Param,
   HttpCode,
   HttpStatus,
   BadRequestException,
@@ -561,6 +563,53 @@ export class AuthController {
     });
 
     return res.json({ message: 'Logout successful' });
+  }
+
+  @Get('sessions')
+  @UseGuards(SessionGuard)
+  @ApiOperation({ summary: 'List active sessions', description: 'Returns all active sessions for the current user' })
+  async listSessions(@CurrentUser() botUserId: string, @Req() req: AuthenticatedRequest) {
+    const token =
+      req.cookies?.session_token || req.headers.authorization?.replace('Bearer ', '');
+    const session = token ? await this.sessionService.validateSession(token) : null;
+    const sessions = await this.sessionService.listUserSessions(
+      botUserId,
+      session?.sessionId,
+    );
+
+    return { sessions };
+  }
+
+  @Delete('sessions/:sessionId')
+  @UseGuards(SessionGuard)
+  @ApiOperation({ summary: 'Revoke session', description: 'Revokes a specific session by ID' })
+  async revokeSession(
+    @CurrentUser() botUserId: string,
+    @Param('sessionId') sessionId: string,
+  ) {
+    const revoked = await this.sessionService.revokeSessionById(botUserId, sessionId);
+    if (!revoked) {
+      throw new BadRequestException('Session not found');
+    }
+    return { success: true };
+  }
+
+  @Post('sessions/revoke-others')
+  @UseGuards(SessionGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Revoke other sessions',
+    description: 'Revokes all sessions except the current one',
+  })
+  async revokeOtherSessions(@CurrentUser() botUserId: string, @Req() req: AuthenticatedRequest) {
+    const token =
+      req.cookies?.session_token || req.headers.authorization?.replace('Bearer ', '');
+    if (!token) {
+      throw new BadRequestException('No active session');
+    }
+
+    const revokedCount = await this.sessionService.revokeOtherSessions(botUserId, token);
+    return { success: true, revokedCount };
   }
 
   /** Base URL of the Next.js app (OAuth redirect target). */

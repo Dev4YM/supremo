@@ -105,6 +105,70 @@ export class SessionService {
     });
   }
 
+  async listUserSessions(botUserId: string, currentSessionId?: string) {
+    const sessions = await this.prisma.authSession.findMany({
+      where: {
+        botUserId,
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { lastSeenAt: 'desc' },
+      select: {
+        id: true,
+        createdAt: true,
+        lastSeenAt: true,
+        expiresAt: true,
+        ip: true,
+        userAgent: true,
+      },
+    });
+
+    return sessions.map((session) => ({
+      ...session,
+      current: session.id === currentSessionId,
+    }));
+  }
+
+  async revokeSessionById(botUserId: string, sessionId: string) {
+    const result = await this.prisma.authSession.updateMany({
+      where: {
+        id: sessionId,
+        botUserId,
+        revokedAt: null,
+      },
+      data: {
+        revokedAt: new Date(),
+      },
+    });
+
+    return result.count > 0;
+  }
+
+  async revokeOtherSessions(botUserId: string, keepToken: string) {
+    const tokenHash = this.hashToken(keepToken);
+    const currentSession = await this.prisma.authSession.findUnique({
+      where: { tokenHash },
+      select: { id: true, botUserId: true },
+    });
+
+    if (!currentSession || currentSession.botUserId !== botUserId) {
+      return 0;
+    }
+
+    const result = await this.prisma.authSession.updateMany({
+      where: {
+        botUserId,
+        id: { not: currentSession.id },
+        revokedAt: null,
+      },
+      data: {
+        revokedAt: new Date(),
+      },
+    });
+
+    return result.count;
+  }
+
   /**
    * Clean up expired sessions
    */

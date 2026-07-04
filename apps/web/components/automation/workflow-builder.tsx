@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -49,6 +49,7 @@ import {
   Info,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useActionsList } from '@/lib/hooks/use-api'
 
 interface WorkflowNode {
   id: string
@@ -131,6 +132,20 @@ const triggerTypes = [
     }
   },
 ]
+
+const DEFAULT_ACTION_ICON = Bot
+const ACTION_ICON_MAP: Record<string, typeof Bot> = {
+  send_message: MessageSquare,
+  send_dm: Mail,
+  add_role: UserPlus,
+  remove_role: UserPlus,
+  timeout: AlertTriangle,
+  timeout_user: AlertTriangle,
+  delete_message: Trash2,
+  create_channel: Hash,
+  wait: Clock,
+  warn: AlertTriangle,
+}
 
 const actionTypes = [
   {
@@ -256,6 +271,48 @@ const conditionTypes = [
 ]
 
 export function WorkflowBuilder({ initialWorkflow, onSave, onCancel }: WorkflowBuilderProps) {
+  const { data: registryActions = [] } = useActionsList()
+
+  const mergedActionTypes = useMemo(() => {
+    const hardcodedById = new Map(actionTypes.map((action) => [action.id, action]))
+    const utilityTypes = new Set(['condition', 'wait'])
+
+    if (!registryActions.length) {
+      return actionTypes
+    }
+
+    return registryActions
+      .filter((action: { type: string; category?: string }) => {
+        if (utilityTypes.has(action.type)) return false
+        if (action.category === 'utility' && action.type === 'condition') return false
+        return true
+      })
+      .map((action: { type: string; name: string; description?: string }) => {
+        const hardcoded =
+          hardcodedById.get(action.type) ||
+          hardcodedById.get(action.type === 'timeout' ? 'timeout_user' : action.type) ||
+          hardcodedById.get(action.type === 'wait' ? 'delay' : action.type)
+
+        if (hardcoded) {
+          return {
+            ...hardcoded,
+            id: action.type,
+            name: action.name || hardcoded.name,
+            description: action.description || hardcoded.description,
+          }
+        }
+
+        return {
+          id: action.type,
+          name: action.name,
+          icon: ACTION_ICON_MAP[action.type] || DEFAULT_ACTION_ICON,
+          color: 'text-gray-500',
+          description: action.description || '',
+          config: {},
+        }
+      })
+  }, [registryActions])
+
   const [workflow, setWorkflow] = useState({
     name: initialWorkflow?.name || '',
     description: initialWorkflow?.description || '',
@@ -474,7 +531,7 @@ export function WorkflowBuilder({ initialWorkflow, onSave, onCancel }: WorkflowB
                   <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
                     Actions
                   </h3>
-                  {actionTypes.map((action) => (
+                  {mergedActionTypes.map((action) => (
                     <Button
                       key={action.id}
                       variant="outline"
@@ -537,7 +594,7 @@ export function WorkflowBuilder({ initialWorkflow, onSave, onCancel }: WorkflowB
             ) : (
               <div className="space-y-4">
                 {workflow.nodes.map((node, index) => {
-                  const nodeType = [...triggerTypes, ...conditionTypes, ...actionTypes].find(
+                  const nodeType = [...triggerTypes, ...conditionTypes, ...mergedActionTypes].find(
                     t => t.id === node.subtype || t.name === node.name
                   )
                   
@@ -619,7 +676,7 @@ export function WorkflowBuilder({ initialWorkflow, onSave, onCancel }: WorkflowB
           {selectedNode && (
             <NodeConfigForm 
               node={selectedNode} 
-              nodeType={[...triggerTypes, ...conditionTypes, ...actionTypes].find(
+              nodeType={[...triggerTypes, ...conditionTypes, ...mergedActionTypes].find(
                 t => t.name === selectedNode.name
               )}
             />

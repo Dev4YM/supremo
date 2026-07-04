@@ -1,11 +1,15 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { RealtimeGateway } from '../api-server/websocket/realtime.gateway';
 
 @Injectable()
 export class TrustScoreService {
   private readonly logger = new Logger(TrustScoreService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Optional() private readonly realtimeGateway?: RealtimeGateway,
+  ) {}
 
   async adjustTrustScore(userId: string, change: number, reason?: string, incidentId?: string) {
     const user = await this.prisma.user.findUnique({
@@ -37,6 +41,8 @@ export class TrustScoreService {
     });
 
     this.logger.log(`Trust score adjusted for user ${user.username}: ${previousScore} -> ${newScore} (${change > 0 ? '+' : ''}${change})`);
+
+    this.realtimeGateway?.broadcastTrustScoreUpdate(user.guildId, userId, newScore);
 
     return { previousScore, newScore, change };
   }
