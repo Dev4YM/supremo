@@ -105,7 +105,7 @@ export class UserIntelligenceService {
           take: 10,
         },
         messages: {
-          take: 1,
+          take: 100,
           orderBy: { createdAt: 'desc' },
         },
       },
@@ -115,19 +115,34 @@ export class UserIntelligenceService {
       throw new Error(`User ${userId} not found in guild ${guildId}`);
     }
 
-    // Get Discord user info if available
-    const guild = await this.prisma.guild.findUnique({
-      where: { id: guildId },
-    });
+    const accountCreated = this.discordIdToCreatedAt(user.discordId);
+    const interactions = user.messages.map((m) => ({
+      type: 'message',
+      at: m.createdAt,
+    }));
 
     return {
-      accountCreated: new Date(), // TODO: Get from Discord API
+      accountCreated,
       serverJoinDate: user.joinedAt,
       messageCount: user.messageCount,
       incidents: user.incidents,
-      interactions: [], // TODO: Calculate from messages/reactions
-      verified: false, // TODO: Check Discord verification status
+      interactions,
+      verified: this.isAccountMature(accountCreated),
     };
+  }
+
+  private discordIdToCreatedAt(discordId: string): Date {
+    try {
+      const timestamp = Number((BigInt(discordId) >> 22n) + 1420070400000n);
+      return new Date(timestamp);
+    } catch {
+      return new Date();
+    }
+  }
+
+  private isAccountMature(created: Date): boolean {
+    const days = this.daysBetween(created, new Date());
+    return days >= 30;
   }
 
   private async updateUserIntelligence(

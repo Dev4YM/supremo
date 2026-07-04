@@ -39,7 +39,7 @@ import {
   UserX,
   Flag,
 } from "lucide-react"
-import { useTrustReputationConfig } from "@/lib/hooks/use-api"
+import { useTrustReputationConfig, useUsers, useTrustProbations } from "@/lib/hooks/use-api"
 import { cn } from "@/lib/utils"
 import { useSearchParams } from "next/navigation"
 import { Suspense } from "react"
@@ -62,16 +62,8 @@ const getTrustLevel = (score: number) => {
   return { key: 'medium', ...trustLevelConfig.medium };
 }
 
-// Mock data for demonstration
-const mockUsers = [
-  { id: "1", username: "TrustedMember", discordId: "123456789", trustScore: 85, trend: "up", flags: [], joinDate: "2024-01-15", messageCount: 1456 },
-  { id: "2", username: "NewUser", discordId: "987654321", trustScore: 45, trend: "neutral", flags: [], joinDate: "2026-01-20", messageCount: 23 },
-  { id: "3", username: "SuspiciousUser", discordId: "456789123", trustScore: 25, trend: "down", flags: ["spam", "toxicity"], joinDate: "2025-12-01", messageCount: 89 },
-  { id: "4", username: "RegularMember", discordId: "789123456", trustScore: 72, trend: "up", flags: [], joinDate: "2024-06-10", messageCount: 892 },
-  { id: "5", username: "ProblematicUser", discordId: "321654987", trustScore: 15, trend: "down", flags: ["harassment", "raid"], joinDate: "2025-11-15", messageCount: 234 },
-]
-
-const Loading = () => null;
+// Normalize trust score to 0-100 scale for display
+const normalizeTrustScore = (score: number) => (score > 100 ? Math.min(100, Math.round(score / 10)) : score)
 
 export default function TrustReputationPage() {
   const [searchQuery, setSearchQuery] = useState("")
@@ -79,12 +71,37 @@ export default function TrustReputationPage() {
   const [flagFilter, setFlagFilter] = useState("all")
   const searchParams = useSearchParams()
   
-  // Fetch real data from backend
   const { data: config, isLoading: configLoading } = useTrustReputationConfig();
+  const { data: rawUsers = [], isLoading: usersLoading } = useUsers({ limit: 200 });
+  const { data: probations = [] } = useTrustProbations();
 
-  // For now, use mock data since we don't have user trust data hooks yet
-  const users = mockUsers;
-  const isLoading = false;
+  const probationUserIds = new Set(
+    (probations as Array<{ userId?: string }>).map((p) => p.userId).filter(Boolean)
+  );
+
+  const users = (rawUsers as Array<{
+    id: string;
+    username: string;
+    discordId: string;
+    trustScore: number;
+    warningCount: number;
+    messageCount: number;
+    joinedAt: string;
+  }>).map((user) => ({
+    id: user.id,
+    username: user.username,
+    discordId: user.discordId,
+    trustScore: normalizeTrustScore(user.trustScore ?? 50),
+    trend: "neutral" as const,
+    flags: [
+      ...(user.warningCount > 0 ? [`${user.warningCount} warning${user.warningCount !== 1 ? 's' : ''}`] : []),
+      ...(probationUserIds.has(user.id) ? ['probation'] : []),
+    ],
+    joinDate: user.joinedAt,
+    messageCount: user.messageCount ?? 0,
+  }));
+
+  const isLoading = usersLoading;
 
   const filteredUsers = users.filter((user: any) => {
     const matchesSearch = user.username?.toLowerCase().includes(searchQuery.toLowerCase());
@@ -100,7 +117,11 @@ export default function TrustReputationPage() {
   const totalUsers = users.length;
   const highTrustUsers = users.filter((u: any) => u.trustScore >= 61).length;
   const flaggedUsers = users.filter((u: any) => u.flags.length > 0).length;
-  const avgTrustScore = Math.round(users.reduce((sum: number, u: any) => sum + u.trustScore, 0) / users.length);
+  const avgTrustScore = users.length > 0
+    ? Math.round(users.reduce((sum: number, u: any) => sum + u.trustScore, 0) / users.length)
+    : 0;
+
+  const Loading = () => null;
 
   return (
     <Suspense fallback={<Loading />}>
@@ -171,7 +192,7 @@ export default function TrustReputationPage() {
                   const userLevel = getTrustLevel(u.trustScore);
                   return userLevel.key === key;
                 }).length;
-                const percentage = Math.round((count / totalUsers) * 100);
+                const percentage = totalUsers > 0 ? Math.round((count / totalUsers) * 100) : 0;
 
                 return (
                   <div key={key} className={cn("rounded-lg border p-4", level.bg, "border-border/50")}>

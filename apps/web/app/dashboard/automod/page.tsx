@@ -42,7 +42,7 @@ import {
   Flag,
   Settings,
 } from "lucide-react"
-import { useAutoModRules } from "@/lib/hooks/use-api"
+import { useAutoModRules, useAutoModOffenders } from "@/lib/hooks/use-api"
 import { cn } from "@/lib/utils"
 import { useSearchParams } from "next/navigation"
 import { Suspense } from "react"
@@ -65,20 +65,8 @@ const actionConfig = {
   delete: { color: "text-blue-500", label: "Delete Message" },
 }
 
-// Mock data for demonstration
-const mockRules = [
-  { id: "1", name: "Spam Detection", type: "spam", enabled: true, sensitivity: 85, action: "mute", triggers: 1247, falsePositives: 23 },
-  { id: "2", name: "Toxicity Filter", type: "toxicity", enabled: true, sensitivity: 75, action: "warn", triggers: 892, falsePositives: 12 },
-  { id: "3", name: "Profanity Filter", type: "profanity", enabled: true, sensitivity: 90, action: "delete", triggers: 456, falsePositives: 8 },
-  { id: "4", name: "Link Blocker", type: "links", enabled: false, sensitivity: 60, action: "delete", triggers: 234, falsePositives: 5 },
-  { id: "5", name: "Caps Lock Filter", type: "caps", enabled: true, sensitivity: 70, action: "warn", triggers: 189, falsePositives: 15 },
-]
-
-const mockOffenders = [
-  { id: "1", username: "SpamUser123", violations: 15, lastViolation: "2026-01-23", ruleType: "spam" },
-  { id: "2", username: "ToxicPlayer", violations: 8, lastViolation: "2026-01-22", ruleType: "toxicity" },
-  { id: "3", username: "LinkSpammer", violations: 12, lastViolation: "2026-01-21", ruleType: "links" },
-]
+// Fallback display when API returns empty rules (no mock fake data)
+const emptyRules: never[] = []
 
 const Loading = () => null;
 
@@ -88,11 +76,10 @@ export default function AutoModPage() {
   const [statusFilter, setStatusFilter] = useState("all")
   const searchParams = useSearchParams()
   
-  // Fetch real data from backend
   const { data: rules, isLoading } = useAutoModRules();
+  const { data: offenders = [], isLoading: offendersLoading } = useAutoModOffenders();
 
-  // For now, use mock data since the real data might not be available
-  const displayRules = rules || mockRules;
+  const displayRules = rules ?? emptyRules;
   
   const filteredRules = displayRules.filter((rule: any) => {
     const matchesSearch = rule.name?.toLowerCase().includes(searchQuery.toLowerCase());
@@ -107,10 +94,12 @@ export default function AutoModPage() {
   const totalRules = displayRules.length;
   const activeRules = displayRules.filter((r: any) => r.enabled).length;
   const totalTriggers = displayRules.reduce((sum: number, r: any) => sum + (r.triggers || 0), 0);
-  const avgAccuracy = Math.round(displayRules.reduce((sum: number, r: any) => {
-    const accuracy = r.triggers > 0 ? ((r.triggers - (r.falsePositives || 0)) / r.triggers) * 100 : 100;
-    return sum + accuracy;
-  }, 0) / displayRules.length);
+  const avgAccuracy = displayRules.length > 0
+    ? Math.round(displayRules.reduce((sum: number, r: any) => {
+        const accuracy = r.triggers > 0 ? ((r.triggers - (r.falsePositives || 0)) / r.triggers) * 100 : 100;
+        return sum + accuracy;
+      }, 0) / displayRules.length)
+    : 100;
 
   return (
     <Suspense fallback={<Loading />}>
@@ -333,9 +322,27 @@ export default function AutoModPage() {
                 </p>
               </CardHeader>
               <CardContent>
+                {offendersLoading ? (
+                  <div className="py-4 text-center text-sm text-muted-foreground">Loading offenders…</div>
+                ) : (offenders as Array<{
+                  id: string;
+                  discordUserId: string;
+                  violationCount: number;
+                  lastViolationAt: string;
+                  rule?: { type?: string; name?: string };
+                }>).length === 0 ? (
+                  <p className="py-4 text-center text-sm text-muted-foreground">No escalated offenders yet.</p>
+                ) : (
                 <div className="space-y-3">
-                  {mockOffenders.map((offender: any) => {
-                    const ruleType = ruleTypeConfig[offender.ruleType as keyof typeof ruleTypeConfig] || ruleTypeConfig.spam;
+                  {(offenders as Array<{
+                    id: string;
+                    discordUserId: string;
+                    violationCount: number;
+                    lastViolationAt: string;
+                    rule?: { type?: string; name?: string };
+                  }>).map((offender) => {
+                    const ruleKey = offender.rule?.type || 'spam';
+                    const ruleType = ruleTypeConfig[ruleKey as keyof typeof ruleTypeConfig] || ruleTypeConfig.spam;
                     
                     return (
                       <div
@@ -346,18 +353,21 @@ export default function AutoModPage() {
                           <ruleType.icon className={cn("h-4 w-4", ruleType.color)} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-foreground truncate">{offender.username}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {offender.violations} violations
+                          <p className="text-sm font-medium text-foreground truncate">
+                            {offender.rule?.name || `User ${offender.discordUserId.slice(0, 8)}`}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            Last: {new Date(offender.lastViolation).toLocaleDateString()}
+                            {offender.violationCount} violations
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Last: {new Date(offender.lastViolationAt).toLocaleDateString()}
                           </p>
                         </div>
                       </div>
                     );
                   })}
                 </div>
+                )}
                 <Button variant="outline" className="w-full mt-4" asChild>
                   <Link href="/dashboard/automod/offenders">
                     View All Offenders

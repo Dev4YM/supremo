@@ -867,6 +867,17 @@ export const useUpdateAutoModRule = () => {
   });
 };
 
+export const useAutoModOffenders = () => {
+  return useQuery({
+    queryKey: queryKeys.autoMod.offenders,
+    queryFn: async () => {
+      const response = await autoModAPI.getOffenders();
+      return extractResponseData(response, []);
+    },
+    staleTime: 2 * 60 * 1000,
+  });
+};
+
 // Anti-Raid Hooks
 export const useAntiRaidConfig = () => {
   return useQuery({
@@ -894,6 +905,45 @@ export const useUpdateAntiRaidConfig = () => {
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.message || 'Failed to update anti-raid configuration');
+    },
+  });
+};
+
+export const useAntiRaidJoinRate = () => {
+  return useQuery({
+    queryKey: queryKeys.antiRaid.joinRate,
+    queryFn: async () => {
+      const response = await antiRaidAPI.getJoinRate();
+      return extractResponseData(response, { config: {}, recent: [] });
+    },
+    staleTime: 30 * 1000,
+  });
+};
+
+export const useAntiRaidLockdown = () => {
+  return useQuery({
+    queryKey: queryKeys.antiRaid.lockdown,
+    queryFn: async () => {
+      const response = await antiRaidAPI.getLockdown();
+      return extractResponseData(response, null);
+    },
+    staleTime: 30 * 1000,
+  });
+};
+
+export const useSetAntiRaidLockdown = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: { enabled: boolean; reason: string }) =>
+      antiRaidAPI.setLockdown(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.antiRaid.lockdown });
+      queryClient.invalidateQueries({ queryKey: queryKeys.antiRaid.config });
+      toast.success('Lockdown state updated');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to update lockdown');
     },
   });
 };
@@ -926,6 +976,38 @@ export const useUserTrust = (userId: string) => {
       }
     },
     enabled: !!userId,
+  });
+};
+
+export const useTrustProbations = () => {
+  return useQuery({
+    queryKey: queryKeys.trustReputation.probations,
+    queryFn: async () => {
+      const response = await trustReputationAPI.getProbations();
+      return extractResponseData(response, []);
+    },
+    staleTime: 2 * 60 * 1000,
+  });
+};
+
+export const useCreateModerationAction = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: {
+      userId: string;
+      actionType: 'warn' | 'timeout' | 'note' | 'ban' | 'kick';
+      executor: string;
+      reason?: string;
+      duration?: number;
+    }) => actionsAPI.createAction(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.actions.list() });
+      toast.success('Moderation action executed');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to execute action');
+    },
   });
 };
 

@@ -46,6 +46,13 @@ import {
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { AdvancedDataTable } from "@/components/data-table/advanced-data-table"
+import {
+  useAuth,
+  useCreateModerationAction,
+  useGuildModerationActions,
+  useUsers,
+} from "@/lib/hooks/use-api"
+import { Loader2 } from "lucide-react"
 
 const actionTypes = [
   { id: 'timeout', name: 'Timeout', icon: Clock, color: 'text-amber-500', description: 'Temporarily restrict user' },
@@ -87,48 +94,63 @@ const quickActions = [
   },
 ]
 
-// Mock moderation data
-const moderationActions = [
-  {
-    id: '1',
-    type: 'timeout',
-    targetUser: { id: '123', username: 'SpamUser123', avatar: null },
-    moderator: { id: '456', username: 'ModeratorBot', avatar: null },
-    reason: 'Excessive spam in #general',
-    duration: '1 hour',
-    createdAt: new Date().toISOString(),
-    status: 'active',
-    evidence: 'Message IDs: 789, 790, 791'
-  },
-  {
-    id: '2',
-    type: 'ban',
-    targetUser: { id: '124', username: 'ToxicUser99', avatar: null },
-    moderator: { id: '457', username: 'AdminUser', avatar: null },
-    reason: 'Harassment and hate speech',
-    duration: 'permanent',
-    createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    status: 'active',
-    evidence: 'Screenshots attached'
-  },
-  {
-    id: '3',
-    type: 'warn',
-    targetUser: { id: '125', username: 'NewUser456', avatar: null },
-    moderator: { id: '456', username: 'ModeratorBot', avatar: null },
-    reason: 'Off-topic discussion in #announcements',
-    duration: null,
-    createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-    status: 'completed',
-    evidence: 'Message ID: 792'
-  },
-]
+function mapActionType(type: string): string {
+  const t = type.toUpperCase()
+  if (t.includes('BAN')) return 'ban'
+  if (t.includes('KICK')) return 'kick'
+  if (t.includes('TIMEOUT') || t.includes('MUTE')) return 'timeout'
+  if (t.includes('WARN')) return 'warn'
+  if (t.includes('DELETE')) return 'delete'
+  return 'warn'
+}
 
 export default function ModerationPage() {
   const [selectedAction, setSelectedAction] = useState<any>(null)
   const [showActionModal, setShowActionModal] = useState(false)
   const [showQuickActionModal, setShowQuickActionModal] = useState(false)
   const [selectedQuickAction, setSelectedQuickAction] = useState<any>(null)
+  const [newActionType, setNewActionType] = useState('warn')
+  const [newTarget, setNewTarget] = useState('')
+  const [newReason, setNewReason] = useState('')
+
+  const { data: authUser } = useAuth()
+  const { data: apiActions = [], isLoading } = useGuildModerationActions({ limit: 100 })
+  const { data: users = [] } = useUsers({ limit: 500 })
+  const createAction = useCreateModerationAction()
+
+  const moderationActions = (apiActions as Array<{
+    id: string;
+    type: string;
+    user?: { id?: string; username?: string; avatar?: string | null; discordId?: string };
+    executedBy?: string;
+    approvedBy?: string;
+    reason?: string | null;
+    parameters?: Record<string, unknown>;
+    executedAt?: string;
+    status?: string;
+  }>).map((action) => {
+    const params = action.parameters && typeof action.parameters === 'object' ? action.parameters : {}
+    const mappedType = mapActionType(action.type)
+    return {
+      id: action.id,
+      type: mappedType,
+      targetUser: {
+        id: action.user?.id || action.user?.discordId || '',
+        username: action.user?.username || 'Unknown',
+        avatar: action.user?.avatar || null,
+      },
+      moderator: {
+        id: action.executedBy || action.approvedBy || '',
+        username: action.executedBy || action.approvedBy || 'Moderator',
+        avatar: null,
+      },
+      reason: action.reason || (params.reason as string) || 'No reason provided',
+      duration: mappedType === 'timeout' ? '1 hour' : mappedType === 'ban' ? 'permanent' : null,
+      createdAt: action.executedAt || new Date().toISOString(),
+      status: action.status?.toLowerCase() === 'failed' ? 'completed' : 'active',
+      evidence: '',
+    }
+  })
 
   // Stats
   const stats = {
@@ -277,11 +299,44 @@ export default function ModerationPage() {
       label: 'Revoke Selected',
       icon: XCircle,
       onClick: (rows: any[]) => {
-        toast.info(`Revoke ${rows.length} actions`)
+        toast.info(`Revoke ${rows.length} actions — not yet supported via API`)
       },
       variant: 'destructive' as const
     }
   ]
+
+  const resolveTargetUserId = (target: string): string | null => {
+    const needle = target.trim().toLowerCase()
+    if (!needle) return null
+    const match = (users as Array<{ id: string; username: string; discordId: string }>).find(
+      (u) => u.id === target || u.discordId === target || u.username.toLowerCase() === needle
+    )
+    return match?.id ?? null
+  }
+
+  const handleExecuteAction = () => {
+    const userId = resolveTargetUserId(newTarget)
+    if (!userId) {
+      toast.error('Target user not found. Use username, user ID, or Discord ID.')
+      return
+    }
+    if (!authUser?.discordId) {
+      toast.error('You must be logged in to execute actions.')
+      return
+    }
+    const actionType = newActionType as 'warn' | 'timeout' | 'ban' | 'kick'
+    if (!['warn', 'timeout', 'ban', 'kick'].includes(actionType)) {
+      toast.error('Unsupported action type for API execution.')
+      return
+    }
+    createAction.mutate({
+      userId,
+      actionType,
+      executor: authUser.discordId,
+      reason: newReason || undefined,
+      duration: actionType === 'timeout' ? 3600 : undefined,
+    })
+  }
 
   return (
     <div className="space-y-6">
@@ -295,6 +350,12 @@ export default function ModerationPage() {
         ].map((stat) => (
           <Card key={stat.label} className="border-border/50 bg-card/50">
             <CardContent className="p-4">
+              {isLoading ? (
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-sm">Loading…</span>
+                </div>
+              ) : (
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-medium text-muted-foreground">{stat.label}</p>
@@ -304,6 +365,7 @@ export default function ModerationPage() {
                   <stat.icon className="h-5 w-5" />
                 </div>
               </div>
+              )}
             </CardContent>
           </Card>
         ))}
@@ -551,12 +613,12 @@ export default function ModerationPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Action Type</Label>
-                <Select>
+                <Select value={newActionType} onValueChange={setNewActionType}>
                   <SelectTrigger className="mt-1">
                     <SelectValue placeholder="Select action" />
                   </SelectTrigger>
                   <SelectContent>
-                    {actionTypes.map((action) => (
+                    {actionTypes.filter(a => ['warn','timeout','ban','kick'].includes(a.id)).map((action) => (
                       <SelectItem key={action.id} value={action.id}>
                         <div className="flex items-center gap-2">
                           <action.icon className={cn("w-4 h-4", action.color)} />
@@ -574,6 +636,8 @@ export default function ModerationPage() {
                   id="target"
                   placeholder="Username or User ID"
                   className="mt-1"
+                  value={newTarget}
+                  onChange={(e) => setNewTarget(e.target.value)}
                 />
               </div>
             </div>
@@ -585,12 +649,14 @@ export default function ModerationPage() {
                 placeholder="Enter detailed reason for this action"
                 className="mt-1"
                 rows={3}
+                value={newReason}
+                onChange={(e) => setNewReason(e.target.value)}
               />
             </div>
             
             <div className="flex gap-2 pt-4">
-              <Button>
-                <Gavel className="w-4 h-4 mr-2" />
+              <Button onClick={handleExecuteAction} disabled={createAction.isPending}>
+                {createAction.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Gavel className="w-4 h-4 mr-2" />}
                 Execute Action
               </Button>
               <Button variant="outline">

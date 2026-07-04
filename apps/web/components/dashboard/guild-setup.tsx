@@ -8,33 +8,29 @@ import {
   Plus, 
   Server, 
   Users, 
-  Shield,
-  Settings,
   ExternalLink,
 } from "lucide-react"
-import { useConnectGuild, useDiscordGuild } from "@/lib/hooks/use-api"
+import { useConnectGuild, useGuilds } from "@/lib/hooks/use-api"
 import { useGuildContext } from "@/components/providers/guild-provider"
 
 export function GuildSetup() {
   const { guilds, isLoading } = useGuildContext();
+  const { data: allGuilds = [], isLoading: guildsLoading } = useGuilds();
   const connectGuildMutation = useConnectGuild();
 
-  // Mock Discord guilds that the bot is in but user hasn't connected to the dashboard
-  const availableGuilds = [
-    { 
-      id: "1234567890", 
-      name: "Super Developers", 
-      icon: null, 
-      memberCount: 3,
-      botAdded: true 
-    }
-  ];
+  const availableGuilds = (allGuilds as Array<{
+    discordGuildId: string;
+    name: string;
+    icon: string | null;
+    memberCount: number;
+    connected: boolean;
+  }>).filter((g) => !g.connected);
 
   const handleConnectGuild = (discordGuildId: string) => {
     connectGuildMutation.mutate(discordGuildId);
   };
 
-  if (isLoading) {
+  if (isLoading || guildsLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Card className="w-full max-w-md">
@@ -68,51 +64,61 @@ export function GuildSetup() {
               </p>
             </div>
 
-            <div className="space-y-3">
-              {availableGuilds.map((guild) => (
-                <div
-                  key={guild.id}
-                  className="flex items-center gap-4 p-4 rounded-xl border border-border/50 bg-secondary/20"
-                >
-                  <Avatar className="h-12 w-12">
-                    <AvatarImage src={guild.icon ?? undefined} />
-                    <AvatarFallback className="bg-primary/10 text-primary font-semibold">
-                      {guild.name.charAt(0)}
-                    </AvatarFallback>
-                  </Avatar>
-                  
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-semibold">{guild.name}</h4>
-                      <Badge variant="outline" className="text-xs">
-                        <Users className="w-3 h-3 mr-1" />
-                        {guild.memberCount} members
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Bot is installed and ready to use
-                    </p>
-                  </div>
-
-                  <Button 
-                    onClick={() => handleConnectGuild(guild.id)}
-                    disabled={connectGuildMutation.isPending}
-                    className="gap-2"
+            {availableGuilds.length === 0 ? (
+              <div className="text-center py-6 rounded-xl border border-dashed border-border/50">
+                <p className="text-sm text-muted-foreground">
+                  No unconnected servers found. Add Supremo Bot to your Discord server first.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {availableGuilds.map((guild) => (
+                  <div
+                    key={guild.discordGuildId}
+                    className="flex items-center gap-4 p-4 rounded-xl border border-border/50 bg-secondary/20"
                   >
-                    <Plus className="w-4 h-4" />
-                    Connect
-                  </Button>
-                </div>
-              ))}
-            </div>
+                    <Avatar className="h-12 w-12">
+                      <AvatarImage src={guild.icon ?? undefined} />
+                      <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+                        {guild.name.charAt(0)}
+                      </AvatarFallback>
+                    </Avatar>
+                    
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-semibold">{guild.name}</h4>
+                        <Badge variant="outline" className="text-xs">
+                          <Users className="w-3 h-3 mr-1" />
+                          {guild.memberCount} members
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Bot is installed and ready to connect
+                      </p>
+                    </div>
+
+                    <Button 
+                      onClick={() => handleConnectGuild(guild.discordGuildId)}
+                      disabled={connectGuildMutation.isPending}
+                      className="gap-2"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Connect
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="text-center pt-4 border-t">
               <p className="text-sm text-muted-foreground mb-4">
-                Don't see your server? Make sure Supremo Bot is added to your Discord server first.
+                Don&apos;t see your server? Make sure Supremo Bot is added to your Discord server first.
               </p>
-              <Button variant="outline" className="gap-2">
-                <ExternalLink className="w-4 h-4" />
-                Add Bot to Server
+              <Button variant="outline" className="gap-2" asChild>
+                <a href="https://discord.com/oauth2/authorize" target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="w-4 h-4" />
+                  Add Bot to Server
+                </a>
               </Button>
             </div>
           </CardContent>
@@ -121,5 +127,5 @@ export function GuildSetup() {
     );
   }
 
-  return null; // If guilds exist, don't show setup
+  return null;
 }

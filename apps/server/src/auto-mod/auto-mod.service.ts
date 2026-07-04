@@ -246,14 +246,23 @@ export class AutoModService {
   }
 
   private async detectToxicity(content: string): Promise<boolean> {
-    // Placeholder - would use ML model or API
-    const toxicWords = ['hate', 'kill', 'die']; // Simplified
-    return toxicWords.some((word) => content.toLowerCase().includes(word));
+    const toxicPatterns = [
+      /\b(kill yourself|kys)\b/i,
+      /\b(hate|stupid|idiot|moron)\b/i,
+      /\b(die|death threat)\b/i,
+    ];
+    return toxicPatterns.some((pattern) => pattern.test(content));
   }
 
   private async detectNSFW(content: string): Promise<boolean> {
-    // Placeholder - would use ML model or API
-    return false;
+    const nsfwPatterns = [
+      /\b(porn|xxx|nsfw|onlyfans)\b/i,
+      /\b(nude|naked|hentai)\b/i,
+    ];
+    const nsfwDomains = ['pornhub', 'xvideos', 'redtube', 'onlyfans.com'];
+    const lower = content.toLowerCase();
+    return nsfwPatterns.some((p) => p.test(lower)) ||
+      nsfwDomains.some((d) => lower.includes(d));
   }
 
   private detectScam(content: string): boolean {

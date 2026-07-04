@@ -177,9 +177,17 @@ export class ScamDetectionRule extends BaseRule {
   }
 
   private isNewAccount(signal: Signal): boolean {
-    // This would need to be implemented based on actual user data
-    // For now, return false as placeholder
-    return false;
+    const discordId = signal.userId || signal.data.user?.id || signal.data.author?.id;
+    if (!discordId || !/^\d{17,20}$/.test(discordId)) {
+      return false;
+    }
+    try {
+      const createdAt = Number((BigInt(discordId) >> 22n) + 1420070400000n);
+      const ageDays = (Date.now() - createdAt) / (1000 * 60 * 60 * 24);
+      return ageDays < 7;
+    } catch {
+      return false;
+    }
   }
 
   private getScamIndicators(content: string): string[] {
