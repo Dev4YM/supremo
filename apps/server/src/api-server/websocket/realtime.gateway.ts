@@ -34,8 +34,11 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   async handleConnection(client: Socket) {
     try {
-      // Extract token from handshake auth or query
-      const token = client.handshake.auth?.token || client.handshake.query?.token;
+      const cookieToken = this.extractSessionTokenFromCookies(client.handshake.headers.cookie);
+      const token =
+        client.handshake.auth?.token ||
+        client.handshake.query?.token ||
+        cookieToken;
       
       if (!token) {
         this.logger.warn(`Client ${client.id} connected without token`);
@@ -166,6 +169,23 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
         this.server.to(socketId).emit(event, data);
       });
     }
+  }
+
+  private extractSessionTokenFromCookies(cookieHeader?: string): string | null {
+    if (!cookieHeader) {
+      return null;
+    }
+
+    const cookies = cookieHeader.split(';').reduce<Record<string, string>>((acc, part) => {
+      const [rawKey, ...rawValue] = part.trim().split('=');
+      if (!rawKey) {
+        return acc;
+      }
+      acc[rawKey] = decodeURIComponent(rawValue.join('='));
+      return acc;
+    }, {});
+
+    return cookies.session_token || null;
   }
 }
 

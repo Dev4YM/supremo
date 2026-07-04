@@ -219,6 +219,9 @@ export const automationAPI = {
 export const automationTemplatesAPI = {
   list: (params?: { category?: string }) =>
     apiClient.get<ApiResponse<any[]>>('/api/templates', { params }),
+
+  instantiate: (key: string, data?: Record<string, unknown>) =>
+    apiClient.post<ApiResponse<any>>(`/api/templates/${key}/instantiate`, data || {}),
 };
 
 // Cases API - matches backend /api/cases endpoints

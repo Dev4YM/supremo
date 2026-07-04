@@ -1,6 +1,7 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateIncidentDto, UpdateIncidentDto } from './dto/incident.dto';
+import { RealtimeGateway } from '../api-server/websocket/realtime.gateway';
 
 /**
  * Service for managing incidents (auto-moderation violations)
@@ -9,7 +10,10 @@ import { CreateIncidentDto, UpdateIncidentDto } from './dto/incident.dto';
 export class IncidentsService {
   private readonly logger = new Logger(IncidentsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly realtimeGateway?: RealtimeGateway,
+  ) {}
 
   /**
    * Create a new incident
@@ -179,7 +183,7 @@ export class IncidentsService {
       updateData.status = data.status.toUpperCase() as any;
     }
 
-    return this.prisma.incident.update({
+    const updated = await this.prisma.incident.update({
       where: { id },
       data: updateData,
       include: {
@@ -193,6 +197,13 @@ export class IncidentsService {
         },
       },
     });
+
+    this.realtimeGateway?.broadcastIncidentUpdate(guildId, id, {
+      status: updated.status,
+      incident: updated,
+    });
+
+    return updated;
   }
 
   /**

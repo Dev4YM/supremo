@@ -1,7 +1,8 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { DiscordService } from '../discord/discord.service';
 import { CreateActionDto } from './dto/action.dto';
+import { RealtimeGateway } from '../api-server/websocket/realtime.gateway';
 
 @Injectable()
 export class ActionsService {
@@ -10,6 +11,7 @@ export class ActionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly discordService: DiscordService,
+    @Optional() private readonly realtimeGateway?: RealtimeGateway,
   ) {}
 
   async executeAction(data: CreateActionDto & { guildId: string }) {
@@ -99,6 +101,12 @@ export class ActionsService {
     });
 
     this.logger.log(`Action ${data.actionType} executed for user ${user.username} by ${data.executor}`);
+
+    this.realtimeGateway?.broadcastActionCompleted(data.guildId, action.id, {
+      action,
+      result,
+      type: action.type,
+    });
 
     return { action, result };
   }

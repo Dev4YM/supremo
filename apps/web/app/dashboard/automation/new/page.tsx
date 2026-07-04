@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { WorkflowBuilder } from "@/components/automation/workflow-builder"
 import { useCreateAutomation } from "@/lib/hooks/use-api"
+import { transformWorkflowToApiPayload } from "@/lib/workflow-transform"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
@@ -12,19 +13,12 @@ export default function NewWorkflowPage() {
 
   const handleSave = async (workflow: any) => {
     try {
-      await createAutomationMutation.mutateAsync({
-        name: workflow.name,
-        description: workflow.description,
-        enabled: true,
-        trigger: workflow.nodes.find((n: any) => n.type === 'trigger'),
-        actions: workflow.nodes.filter((n: any) => n.type === 'action'),
-        conditions: workflow.nodes.filter((n: any) => n.type === 'condition'),
-      })
-      
+      const payload = transformWorkflowToApiPayload(workflow)
+      await createAutomationMutation.mutateAsync(payload)
       toast.success('Automation created successfully!')
       router.push('/dashboard/automation')
-    } catch (error) {
-      toast.error('Failed to create automation')
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to create automation')
     }
   }
 

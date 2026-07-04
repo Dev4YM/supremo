@@ -7,6 +7,7 @@ import { AppSidebar } from "@/components/dashboard/app-sidebar"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { AuthGuard } from '@/components/auth/auth-guard';
 import { GuildProvider, useGuildContext } from '@/components/providers/guild-provider';
+import { RealtimeProvider } from '@/components/providers/realtime-provider';
 import { GuildSetup } from '@/components/dashboard/guild-setup';
 import { ErrorBoundary } from '@/components/error-boundary';
 
@@ -20,6 +21,7 @@ export default function DashboardLayout({
       <AuthGuard>
         <GuildProvider>
           <GuildSetupWrapper>
+            <RealtimeProvider>
             <SidebarProvider>
               <AppSidebar />
               <SidebarInset>
@@ -33,6 +35,7 @@ export default function DashboardLayout({
                 </main>
               </SidebarInset>
             </SidebarProvider>
+            </RealtimeProvider>
           </GuildSetupWrapper>
         </GuildProvider>
       </AuthGuard>

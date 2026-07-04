@@ -43,44 +43,29 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
+import { useGuildSettings } from "@/lib/hooks/use-guild-settings"
+import { Loader2 } from "lucide-react"
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('general')
   const [showToken, setShowToken] = useState(false)
-  
-  // Settings state
-  const [generalSettings, setGeneralSettings] = useState({
-    botName: 'Supremo Bot',
-    description: 'Advanced Discord moderation and automation bot',
-    prefix: '!',
-    language: 'en',
-    timezone: 'UTC',
-    status: 'online',
-    activity: 'Watching over the server'
-  })
 
-  const [moderationSettings, setModerationSettings] = useState({
-    autoMod: true,
-    antiSpam: true,
-    antiRaid: true,
-    autoRole: false,
-    welcomeMessage: true,
-    leaveMessage: false,
-    logChannel: '',
-    muteRole: '',
-    maxWarnings: 3,
-    autoTimeout: true
-  })
-
-  const [notificationSettings, setNotificationSettings] = useState({
-    discordNotifications: true,
-    emailNotifications: false,
-    webhookNotifications: true,
-    incidentAlerts: true,
-    systemAlerts: true,
-    maintenanceAlerts: false,
-    webhookUrl: ''
-  })
+  const {
+    isLoading,
+    generalSettings,
+    setGeneralSettings,
+    moderationSettings,
+    setModerationSettings,
+    notificationSettings,
+    setNotificationSettings,
+    appearanceSettings,
+    setAppearanceSettings,
+    saveGeneral,
+    saveModeration,
+    saveNotifications,
+    saveAppearance,
+    isSaving,
+  } = useGuildSettings()
 
   const [securitySettings, setSecuritySettings] = useState({
     twoFactorAuth: false,
@@ -92,8 +77,28 @@ export default function SettingsPage() {
     allowedIPs: []
   })
 
-  const handleSaveSettings = (section: string) => {
-    toast.success(`${section} settings saved successfully`)
+  const handleSaveSettings = async (section: string) => {
+    try {
+      if (section === 'General') await saveGeneral()
+      else if (section === 'Moderation') await saveModeration()
+      else if (section === 'Notifications') await saveNotifications()
+      else if (section === 'Appearance') await saveAppearance()
+      else if (section === 'Security') {
+        await saveConfigSection('settings.security', securitySettings)
+        toast.success('Security preferences saved')
+      }
+    } catch {
+      toast.error(`Failed to save ${section} settings`)
+    }
+  }
+
+  const saveConfigSection = async (key: string, value: unknown) => {
+    const { configAPI } = await import('@/lib/api')
+    await configAPI.createConfig({
+      key,
+      value: JSON.stringify(value),
+      category: 'dashboard_settings',
+    })
   }
 
   const handleResetSettings = (section: string) => {
@@ -101,7 +106,21 @@ export default function SettingsPage() {
   }
 
   const handleExportSettings = () => {
-    toast.success('Settings exported successfully')
+    const payload = {
+      general: generalSettings,
+      moderation: moderationSettings,
+      notifications: notificationSettings,
+      appearance: appearanceSettings,
+      security: securitySettings,
+    }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'supremo-settings.json'
+    a.click()
+    URL.revokeObjectURL(url)
+    toast.success('Settings exported')
   }
 
   const handleImportSettings = () => {
@@ -281,8 +300,8 @@ export default function SettingsPage() {
           </Card>
 
           <div className="flex gap-2">
-            <Button onClick={() => handleSaveSettings('General')}>
-              <Save className="w-4 h-4 mr-2" />
+            <Button onClick={() => handleSaveSettings('General')} disabled={isSaving || isLoading}>
+              {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
               Save Changes
             </Button>
             <Button variant="outline" onClick={() => handleResetSettings('General')}>
@@ -433,7 +452,7 @@ export default function SettingsPage() {
           </Card>
 
           <div className="flex gap-2">
-            <Button onClick={() => handleSaveSettings('Moderation')}>
+            <Button onClick={() => handleSaveSettings('Moderation')} disabled={isSaving}>
               <Save className="w-4 h-4 mr-2" />
               Save Changes
             </Button>
@@ -549,7 +568,7 @@ export default function SettingsPage() {
           </Card>
 
           <div className="flex gap-2">
-            <Button onClick={() => handleSaveSettings('Notifications')}>
+            <Button onClick={() => handleSaveSettings('Notifications')} disabled={isSaving}>
               <Save className="w-4 h-4 mr-2" />
               Save Changes
             </Button>
@@ -666,13 +685,59 @@ export default function SettingsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="text-center py-8 text-muted-foreground">
-                <Palette className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>Appearance customization coming soon</p>
-                <p className="text-xs mt-2">Theme selection, color schemes, and layout options</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Primary Color</Label>
+                  <Input
+                    type="color"
+                    value={appearanceSettings.themePrimaryColor}
+                    onChange={(e) => setAppearanceSettings((p) => ({ ...p, themePrimaryColor: e.target.value }))}
+                    className="mt-1 h-10"
+                  />
+                </div>
+                <div>
+                  <Label>Accent Color</Label>
+                  <Input
+                    type="color"
+                    value={appearanceSettings.themeAccentColor}
+                    onChange={(e) => setAppearanceSettings((p) => ({ ...p, themeAccentColor: e.target.value }))}
+                    className="mt-1 h-10"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label>Theme Mode</Label>
+                <Select
+                  value={appearanceSettings.themeMode}
+                  onValueChange={(value) => setAppearanceSettings((p) => ({ ...p, themeMode: value }))}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="light">Light</SelectItem>
+                    <SelectItem value="dark">Dark</SelectItem>
+                    <SelectItem value="auto">Auto</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Custom Logo URL</Label>
+                <Input
+                  value={appearanceSettings.customLogoUrl}
+                  onChange={(e) => setAppearanceSettings((p) => ({ ...p, customLogoUrl: e.target.value }))}
+                  className="mt-1"
+                  placeholder="https://..."
+                />
               </div>
             </CardContent>
           </Card>
+          <div className="flex gap-2">
+            <Button onClick={() => handleSaveSettings('Appearance')} disabled={isSaving}>
+              <Save className="w-4 h-4 mr-2" />
+              Save Appearance
+            </Button>
+          </div>
         </TabsContent>
 
         {/* Advanced Settings */}

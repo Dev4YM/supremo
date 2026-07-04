@@ -35,6 +35,7 @@ import {
   useUpdateAutomation,
   useDeleteAutomation,
   useExecuteAutomation,
+  useInstantiateTemplate,
 } from "@/lib/hooks/use-api"
 import { toast } from "sonner"
 import Link from "next/link"
@@ -45,6 +46,7 @@ export default function AutomationPage() {
   const updateAutomationMutation = useUpdateAutomation();
   const deleteAutomationMutation = useDeleteAutomation();
   const executeAutomationMutation = useExecuteAutomation();
+  const instantiateTemplate = useInstantiateTemplate();
 
   const avgSuccessNum =
     automations.length > 0
@@ -91,6 +93,16 @@ export default function AutomationPage() {
       refetch();
     } catch (error) {
       toast.error('Failed to execute automation');
+    }
+  }
+
+  const handleInstantiateTemplate = async (templateKey: string) => {
+    try {
+      await instantiateTemplate.mutateAsync({ key: templateKey, data: {} })
+      toast.success('Workflow created from template')
+      refetch()
+    } catch {
+      toast.error('Failed to create workflow from template')
     }
   }
 
@@ -237,13 +249,17 @@ export default function AutomationPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-40">
-                            <DropdownMenuItem className="gap-2">
-                              <Eye className="h-4 w-4" />
-                              View Details
+                            <DropdownMenuItem className="gap-2" asChild>
+                              <Link href={`/dashboard/automation/${automation.id}`}>
+                                <Eye className="h-4 w-4" />
+                                View / Edit
+                              </Link>
                             </DropdownMenuItem>
-                            <DropdownMenuItem className="gap-2">
-                              <Edit className="h-4 w-4" />
-                              Edit
+                            <DropdownMenuItem className="gap-2" asChild>
+                              <Link href={`/dashboard/automation/${automation.id}`}>
+                                <Edit className="h-4 w-4" />
+                                Edit Workflow
+                              </Link>
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem 
@@ -355,6 +371,15 @@ export default function AutomationPage() {
                           {template.category}
                         </Badge>
                       ) : null}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0"
+                        disabled={instantiateTemplate.isPending}
+                        onClick={() => handleInstantiateTemplate(template.key)}
+                      >
+                        Use
+                      </Button>
                     </div>
                   ))}
                 </div>

@@ -53,6 +53,7 @@ import { cn } from '@/lib/utils'
 interface WorkflowNode {
   id: string
   type: 'trigger' | 'condition' | 'action' | 'delay'
+  subtype?: string
   name: string
   description?: string
   config: Record<string, any>
@@ -83,7 +84,7 @@ const triggerTypes = [
     }
   },
   { 
-    id: 'message_create', 
+    id: 'message_sent', 
     name: 'Message Sent', 
     icon: MessageSquare, 
     color: 'text-blue-500',
@@ -206,20 +207,7 @@ const actionTypes = [
     }
   },
   {
-    id: 'webhook',
-    name: 'Send Webhook',
-    icon: Webhook,
-    color: 'text-indigo-500',
-    description: 'Send data to external webhook',
-    config: {
-      url: { type: 'text', label: 'Webhook URL', required: true },
-      method: { type: 'select', label: 'HTTP Method', options: ['POST', 'PUT', 'PATCH'], required: true },
-      headers: { type: 'json', label: 'Headers JSON', required: false },
-      body: { type: 'json', label: 'Body JSON', required: true }
-    }
-  },
-  {
-    id: 'delay',
+    id: 'wait',
     name: 'Delay',
     icon: Clock,
     color: 'text-gray-500',
@@ -279,8 +267,9 @@ export function WorkflowBuilder({ initialWorkflow, onSave, onCancel }: WorkflowB
 
   const addNode = useCallback((type: 'trigger' | 'condition' | 'action' | 'delay', nodeType: any) => {
     const newNode: WorkflowNode = {
-      id: `${type}_${Date.now()}`,
+      id: `${nodeType.id}_${Date.now()}`,
       type,
+      subtype: nodeType.id,
       name: nodeType.name,
       description: nodeType.description,
       config: {},
@@ -549,7 +538,7 @@ export function WorkflowBuilder({ initialWorkflow, onSave, onCancel }: WorkflowB
               <div className="space-y-4">
                 {workflow.nodes.map((node, index) => {
                   const nodeType = [...triggerTypes, ...conditionTypes, ...actionTypes].find(
-                    t => t.id === node.id.split('_')[0] || t.name === node.name
+                    t => t.id === node.subtype || t.name === node.name
                   )
                   
                   return (

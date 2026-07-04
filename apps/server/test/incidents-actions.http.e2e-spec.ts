@@ -13,6 +13,16 @@ import { AuthModule } from '../src/auth/auth.module';
 import { ActionsController } from '../src/actions/actions.controller';
 import { ActionsService } from '../src/actions/actions.service';
 import { DiscordService } from '../src/discord/discord.service';
+import { RealtimeGateway } from '../src/api-server/websocket/realtime.gateway';
+
+const realtimeGatewayMock = {
+  broadcastIncident: jest.fn(),
+  broadcastIncidentUpdate: jest.fn(),
+  broadcastActionQueued: jest.fn(),
+  broadcastActionCompleted: jest.fn(),
+  broadcastTrustScoreUpdate: jest.fn(),
+  broadcastToUser: jest.fn(),
+};
 
 function e2eDiscordStub(): Partial<DiscordService> {
   return {
@@ -367,7 +377,9 @@ async function createApp(
     .overrideProvider(PrismaService)
     .useValue(prisma)
     .overrideProvider(RbacService)
-    .useValue(rbac);
+    .useValue(rbac)
+    .overrideProvider(RealtimeGateway)
+    .useValue(realtimeGatewayMock);
 
   if (overrides.discord) {
     moduleBuilder = moduleBuilder.overrideProvider(DiscordService).useValue(overrides.discord);

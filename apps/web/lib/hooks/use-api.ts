@@ -596,6 +596,22 @@ export const useAutomationTemplates = (params?: { category?: string }) => {
   });
 };
 
+export const useInstantiateTemplate = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ key, data }: { key: string; data?: Record<string, unknown> }) =>
+      automationTemplatesAPI.instantiate(key, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.automation.all() });
+      toast.success('Template instantiated successfully!');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to instantiate template');
+    },
+  });
+};
+
 export const useAutomation = (id: string) => {
   return useQuery({
     queryKey: queryKeys.automation.detail(id),
